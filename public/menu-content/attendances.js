@@ -19,11 +19,7 @@
     };
 
     // API constants for retry logic
-    const API_RETRY = {
-        MAX_RETRIES: 5,
-        INITIAL_RETRY_DELAY: 1000, // 1 second
-        MAX_RETRY_DELAY: 60000     // 1 minute
-    };
+    const API_RETRY = API_CONSTANTS.RETRY;
     
     // DOM Element References
     const elements = {
@@ -49,7 +45,12 @@
         homeworkStudentsContainer: document.getElementById('homework-students-container'),
         totalProblemsInput: document.getElementById('total-problems'),
         cancelButton: document.querySelector('.cancel_button'),
-        saveButton: document.querySelector('.save_button')
+        saveButton: document.querySelector('.save_button'),
+        
+        // Add container IDs for loading indicators
+        modalContent: document.getElementById('edit-attendance-modal-content'),
+        attendanceTab: document.getElementById('attendance-tab'),
+        homeworkTab: document.getElementById('homework-tab')
     };
     
     // State
@@ -65,30 +66,68 @@
     let homeworkData = [];
     let currentTotalProblems = 10; // Default value for total problems
     
+    // Change tracking
+    let originalAttendanceData = null;
+    let originalHomeworkData = null;
+    let hasUnsavedChanges = false;
+
+    // Create maps for efficient lookups
+    const attendanceMap = new Map();
+    const homeworkMap = new Map();
+    const studentMap = new Map();
+    const lectureMap = new Map();
+    
     // Initialize the page
     async function initPage() {
         try {
-            // Make sure loading indicator is visible
-            if (window.appUtils && window.appUtils.showLoadingIndicator) {
-                window.appUtils.showLoadingIndicator();
-            }
+            // Show loading indicator on the main content
+            UIUtils.showLoading('attendance-content', 'Initializing attendance management...');
             
             await loadInitialData();
             setupEventListeners();
+            buildLookupMaps();
             updateStatistics();
             
             console.log("Attendance page initialized successfully.");
         } catch (error) {
             console.error("Error initializing attendance page:", error);
-            alert("There was a problem loading the attendance data. Please try refreshing the page.");
+            UIUtils.notify("There was a problem loading the attendance data. Please try refreshing the page.", "error");
         } finally {
-            // Hide loading indicator when everything is done
-            if (window.appUtils && window.appUtils.hideLoadingIndicator) {
-                window.appUtils.hideLoadingIndicator();
-            }
+            UIUtils.hideLoading('attendance-content');
         }
     }
     
+    // Build efficient lookup maps for data
+    function buildLookupMaps() {
+        // Clear existing maps
+        attendanceMap.clear();
+        homeworkMap.clear();
+        studentMap.clear();
+        lectureMap.clear();
+        
+        // Build attendance map with composite keys
+        attendanceData.forEach(att => {
+            const key = DataUtils.compositeKey(att.lecture_id, att.student_id);
+            attendanceMap.set(key, att);
+        });
+        
+        // Build homework map with composite keys
+        homeworkData.forEach(hw => {
+            const key = DataUtils.compositeKey(hw.lecture_id, hw.student_id);
+            homeworkMap.set(key, hw);
+        });
+        
+        // Build student map
+        studentsData.forEach(student => {
+            studentMap.set(student.id, student);
+        });
+        
+        // Build lecture map
+        lecturesData.forEach(lecture => {
+            lectureMap.set(lecture.id, lecture);
+        });
+    }
+
     // Load all required data from server
     async function loadInitialData() {
         try {
@@ -221,6 +260,32 @@
         elements.editAttendanceModal.addEventListener('click', (e) => {
             if (e.target === elements.editAttendanceModal) {
                 elements.editAttendanceModal.classList.remove('show');
+            }
+        });
+
+        // Add beforeunload handler for unsaved changes
+        window.addEventListener('beforeunload', e => {
+            if (hasUnsavedChanges) {
+                const message = 'You have unsaved changes that will be lost if you leave the page.';
+                e.returnValue = message;
+                return message;
+            }
+        });
+        
+        // Add change tracking to form inputs
+        function trackChanges() {
+            hasUnsavedChanges = true;
+        }
+        
+        // Attendance change tracking
+        elements.attendanceTab.addEventListener('change', trackChanges);
+        
+        // Homework change tracking with debounce for text inputs
+        const debouncedTrackChanges = UIUtils.debounce(trackChanges);
+        elements.homeworkTab.addEventListener('change', trackChanges);
+        elements.homeworkTab.addEventListener('input', e => {
+            if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
+                debouncedTrackChanges();
             }
         });
     }
@@ -786,12 +851,13 @@
     // Load attendance data for selected class and lecture
     async function loadAttendanceData(focusStudentId = null) {
         if (!selectedClassId || !selectedLectureId) {
-            alert("Please select a class and a lecture.");
+            UIUtils.notify("Please select a class and a lecture.", "warning");
             return;
         }
         
         try {
-            await window.appUtils.showLoadingIndicator();
+            // Show loading indicator
+            UIUtils.showLoading('edit-attendance-modal-content', 'Loading attendance data...');
             
             // Get enrolled students for this class
             const enrolledStudentIds = enrollmentsData
@@ -803,55 +869,55 @@
                 .filter(s => enrolledStudentIds.includes(s.id) && s.status === 'active')
                 .sort((a, b) => a.name.localeCompare(b.name));
             
-            // Create attendance data for all enrolled students
+            // Create attendance data for all enrolled students using the map for faster lookups
+            originalAttendanceData = [];
             currentAttendanceData = [];
             
             activeEnrolledStudents.forEach(student => {
-                // Find existing attendance record
-                const existingRecord = attendanceData.find(a => 
-                    a.lecture_id === selectedLectureId && a.student_id === student.id
-                );
+                // Find existing attendance record using map
+                const key = DataUtils.compositeKey(selectedLectureId, student.id);
+                const existingRecord = attendanceMap.get(key);
                 
                 // Create or use existing record
-                const record = existingRecord ? {
-                    id: existingRecord.id,
-                    lecture_id: existingRecord.lecture_id,
-                    student_id: existingRecord.student_id,
-                    status: existingRecord.status
-                } : {
-                    id: generateAttendanceId(),
+                const record = existingRecord ? {...existingRecord} : {
+                    id: DataUtils.generateUniqueId('AT'),
                     lecture_id: selectedLectureId,
                     student_id: student.id,
                     status: ATTENDANCE_STATUS.NONE // Default to none
                 };
                 
+                // Keep original and current copies to track changes
+                originalAttendanceData.push({...record});
                 currentAttendanceData.push(record);
             });
             
-            // Get homework data
-            currentHomeworkData = homeworkData.filter(hw => 
-                hw.lecture_id === selectedLectureId &&
-                enrolledStudentIds.includes(hw.student_id)
-            );
+            // Get homework data using map for faster lookups
+            originalHomeworkData = [];
+            currentHomeworkData = [];
             
-            // Create homework data for students without records
             activeEnrolledStudents.forEach(student => {
-                const existingHomework = currentHomeworkData.find(hw => 
-                    hw.student_id === student.id
-                );
+                // Find existing homework record using map
+                const key = DataUtils.compositeKey(selectedLectureId, student.id);
+                const existingHomework = homeworkMap.get(key);
                 
-                if (!existingHomework) {
-                    currentHomeworkData.push({
-                        id: generateHomeworkId(),
-                        lecture_id: selectedLectureId,
-                        student_id: student.id,
-                        total_problems: currentTotalProblems,
-                        completed_problems: 0,
-                        classification: HOMEWORK_CLASSIFICATION.NONE,
-                        comments: ''
-                    });
-                }
+                // Create or use existing homework record
+                const record = existingHomework ? {...existingHomework} : {
+                    id: DataUtils.generateUniqueId('HW'),
+                    lecture_id: selectedLectureId,
+                    student_id: student.id,
+                    total_problems: currentTotalProblems,
+                    completed_problems: 0,
+                    classification: HOMEWORK_CLASSIFICATION.NONE,
+                    comments: ''
+                };
+                
+                // Keep original and current copies to track changes
+                originalHomeworkData.push({...record});
+                currentHomeworkData.push(record);
             });
+            
+            // Reset unsaved changes flag
+            hasUnsavedChanges = false;
             
             // Populate modal with data
             await populateModalWithAttendanceData(focusStudentId);
@@ -861,9 +927,9 @@
             
         } catch (error) {
             console.error("Error loading attendance data:", error);
-            alert("Failed to load attendance data. Please try again.");
+            UIUtils.notify("Failed to load attendance data. Please try again.", "error");
         } finally {
-            await window.appUtils.hideLoadingIndicator();
+            UIUtils.hideLoading('edit-attendance-modal-content');
         }
     }
     
@@ -1039,76 +1105,181 @@
         }
     }
     
-    // Save attendance and homework data
+    // Add data synchronization and real-time change tracking
+    async function updateStudentAttendanceUI(studentId, lectureId, status, isProcessing = false) {
+        // Update the cell in the main table
+        const cell = document.querySelector(`.attendance_cell[data-lecture-id="${lectureId}"][data-student-id="${studentId}"]`);
+        
+        if (cell) {
+            // Remove all status classes
+            Object.values(ATTENDANCE_STATUS).forEach(statusClass => {
+                cell.classList.remove(statusClass);
+            });
+            
+            // Add the new status class
+            cell.classList.add(status);
+            
+            // Update the status indicator
+            const statusIndicator = cell.querySelector('.status_indicator');
+            if (statusIndicator) {
+                Object.values(ATTENDANCE_STATUS).forEach(statusClass => {
+                    statusIndicator.classList.remove(statusClass);
+                });
+                statusIndicator.classList.add(status);
+            }
+            
+            // Add processing indicator if needed
+            if (isProcessing) {
+                cell.classList.add('processing');
+                
+                // Create a processing overlay if it doesn't exist
+                if (!cell.querySelector('.processing-overlay')) {
+                    const overlay = document.createElement('div');
+                    overlay.className = 'processing-overlay';
+                    overlay.innerHTML = `<div class="mini-spinner"></div>`;
+                    
+                    // Style the overlay
+                    overlay.style.position = 'absolute';
+                    overlay.style.top = '0';
+                    overlay.style.left = '0';
+                    overlay.style.width = '100%';
+                    overlay.style.height = '100%';
+                    overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.3)';
+                    overlay.style.display = 'flex';
+                    overlay.style.alignItems = 'center';
+                    overlay.style.justifyContent = 'center';
+                    overlay.style.borderRadius = '4px';
+                    
+                    // Make sure the cell has position relative
+                    if (window.getComputedStyle(cell).position === 'static') {
+                        cell.style.position = 'relative';
+                    }
+                    
+                    cell.appendChild(overlay);
+                }
+            } else {
+                // Remove processing indicator
+                cell.classList.remove('processing');
+                const overlay = cell.querySelector('.processing-overlay');
+                if (overlay) overlay.remove();
+            }
+        }
+    }
+    
+    async function updateHomeworkUI(studentId, lectureId, completedProblems, totalProblems, isProcessing = false) {
+        // Update the progress indicator in the main table
+        const cell = document.querySelector(`.attendance_cell[data-lecture-id="${lectureId}"][data-student-id="${studentId}"]`);
+        
+        if (cell) {
+            const progressEl = cell.querySelector('.homework_progress');
+            const percentageEl = cell.querySelector('.homework_percentage');
+            
+            if (progressEl && percentageEl) {
+                const percentage = totalProblems > 0 ? Math.round((completedProblems / totalProblems) * 100) : 0;
+                
+                // Set color based on percentage
+                let color;
+                if (percentage >= 90) {
+                    color = '#17B26A'; // Excellent - green
+                } else if (percentage >= 70) {
+                    color = '#84cc16'; // Good - light green
+                } else if (percentage >= 50) {
+                    color = '#F79009'; // Average - orange
+                } else if (percentage >= 30) {
+                    color = '#fb7185'; // Below average - light red
+                } else {
+                    color = '#F04438'; // Poor - red
+                }
+                
+                progressEl.style.setProperty('--percentage', percentage);
+                progressEl.style.setProperty('--color', color);
+                percentageEl.textContent = `${percentage}%`;
+                percentageEl.style.color = color;
+                
+                // Add processing indicator if needed
+                if (isProcessing) {
+                    progressEl.classList.add('processing');
+                    
+                    if (!progressEl.querySelector('.mini-processing')) {
+                        const processingIndicator = document.createElement('div');
+                        processingIndicator.className = 'mini-processing';
+                        processingIndicator.style.position = 'absolute';
+                        processingIndicator.style.top = '-5px';
+                        processingIndicator.style.right = '-5px';
+                        processingIndicator.style.width = '8px';
+                        processingIndicator.style.height = '8px';
+                        processingIndicator.style.borderRadius = '50%';
+                        processingIndicator.style.backgroundColor = '#7F56D9';
+                        processingIndicator.style.boxShadow = '0 0 5px #7F56D9';
+                        processingIndicator.style.animation = 'pulse 1s infinite';
+                        
+                        progressEl.appendChild(processingIndicator);
+                    }
+                } else {
+                    progressEl.classList.remove('processing');
+                    const indicator = progressEl.querySelector('.mini-processing');
+                    if (indicator) indicator.remove();
+                }
+            }
+        }
+    }
+    
+    // Enhanced save function with real-time UI updates
     async function saveAttendanceAndHomework() {
         try {
-            await window.appUtils.showLoadingIndicator();
+            // Track changes between original and current data
+            const attendanceChanges = DataUtils.ChangeTracker.trackChanges(
+                originalAttendanceData, 
+                currentAttendanceData, 
+                'id',
+                ['status']
+            );
             
-            // Collect attendance data
-            const updatedAttendances = Array.from(elements.attendanceStudentsContainer.querySelectorAll('.student_row')).map(row => {
-                const studentId = row.dataset.studentId;
-                const checkedRadio = row.querySelector('input[type="radio"]:checked');
-                
-                // If a radio is checked, use its value
-                if (checkedRadio) {
-                    return {
-                        studentId,
-                        status: checkedRadio.value
-                    };
-                }
-                
-                // Find existing record to maintain current status
-                const existingRecord = currentAttendanceData.find(a => a.student_id === studentId);
-                if (existingRecord) {
-                    return {
-                        studentId,
-                        status: existingRecord.status
-                    };
-                }
-                
-                // Default to absent if no existing record and no selection
-                return {
-                    studentId,
-                    status: ATTENDANCE_STATUS.ABSENT
-                };
-            });
+            const homeworkChanges = DataUtils.ChangeTracker.trackChanges(
+                originalHomeworkData, 
+                currentHomeworkData, 
+                'id', 
+                ['total_problems', 'completed_problems', 'classification', 'comments']
+            );
             
-            // Collect homework data
-            const updatedHomeworks = Array.from(elements.homeworkStudentsContainer.querySelectorAll('.student_row')).map(row => {
-                const studentId = row.dataset.studentId;
-                const completedProblems = parseInt(row.querySelector('.completed-problems').value) || 0;
-                const classification = row.querySelector('.homework-classification').value;
-                const comments = row.querySelector('.homework-comments').value || '';
+            // If no changes, just close the modal
+            if (attendanceChanges.modified.length === 0 && 
+                attendanceChanges.added.length === 0 && 
+                homeworkChanges.modified.length === 0 && 
+                homeworkChanges.added.length === 0) {
                 
-                return {
-                    studentId,
-                    completedProblems,
-                    classification,
-                    comments
-                };
-            });
+                elements.editAttendanceModal.classList.remove('show');
+                UIUtils.notify("No changes detected.", "info");
+                return;
+            }
             
-            // Prepare the data to send to the server
+            // Show loading indicator for the save operation
+            UIUtils.showLoading('edit-attendance-modal-content', 'Saving attendance and homework data...');
+            
+            // Prepare only the changed data to send to the server
             const dataToSend = {
                 lecture_id: selectedLectureId,
-                attendance_data: updatedAttendances.map(att => ({
-                    attendance_id: generateAttendanceId(), // This will be ignored if the record already exists
-                    lecture_id: selectedLectureId,
-                    student_id: att.studentId,
-                    status: att.status
-                })),
-                homework_data: updatedHomeworks.map(hw => ({
-                    homework_id: generateHomeworkId(), // This will be ignored if the record already exists
-                    lecture_id: selectedLectureId,
-                    student_id: hw.studentId,
-                    total_problems: currentTotalProblems,
-                    completed_problems: hw.completedProblems,
-                    classification: hw.classification,
-                    comments: hw.comments
-                }))
+                attendance_data: [
+                    ...attendanceChanges.added,
+                    ...attendanceChanges.modified
+                ],
+                homework_data: [
+                    ...homeworkChanges.added,
+                    ...homeworkChanges.modified
+                ]
             };
             
-            console.log('Saving data to server:', dataToSend);
+            console.log('Saving changed data to server:', dataToSend);
+            console.log(`Changes: ${attendanceChanges.modified.length} attendance updates, ${attendanceChanges.added.length} new attendance records, ${homeworkChanges.modified.length} homework updates, ${homeworkChanges.added.length} new homework records`);
+            
+            // Add animations to changes being saved
+            [...attendanceChanges.added, ...attendanceChanges.modified].forEach(update => {
+                updateStudentAttendanceUI(update.student_id, update.lecture_id, update.status, true);
+            });
+            
+            [...homeworkChanges.added, ...homeworkChanges.modified].forEach(update => {
+                updateHomeworkUI(update.student_id, update.lecture_id, update.completed_problems, update.total_problems, true);
+            });
             
             // Send the data to the server with retry logic
             const response = await sendRequestWithRetry('/save-attendance-homework', {
@@ -1117,7 +1288,7 @@
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(dataToSend)
-            }, API_RETRY.MAX_RETRIES, API_RETRY.INITIAL_RETRY_DELAY, API_RETRY.MAX_RETRY_DELAY);
+            }, API_RETRY.MAX_RETRIES, API_RETRY.INITIAL_DELAY, API_RETRY.MAX_DELAY);
             
             if (!response.ok) {
                 throw new Error(`Server responded with status: ${response.status}`);
@@ -1128,55 +1299,46 @@
             
             // Update local data structures with the saved data
             
-            // Update attendance data
-            updatedAttendances.forEach(update => {
-                const index = attendanceData.findIndex(a => 
-                    a.lecture_id === selectedLectureId && a.student_id === update.studentId
-                );
+            // Update attendance map and data
+            [...attendanceChanges.added, ...attendanceChanges.modified].forEach(update => {
+                const key = DataUtils.compositeKey(update.lecture_id, update.student_id);
                 
+                // Update map
+                attendanceMap.set(key, {...update});
+                
+                // Update array
+                const index = attendanceData.findIndex(a => a.id === update.id);
                 if (index !== -1) {
-                    // Update existing record
-                    attendanceData[index].status = update.status;
+                    attendanceData[index] = {...update};
                 } else {
-                    // Create new record
-                    const newRecord = {
-                        id: generateAttendanceId(),
-                        lecture_id: selectedLectureId,
-                        student_id: update.studentId,
-                        status: update.status
-                    };
-                    
-                    attendanceData.push(newRecord);
+                    attendanceData.push({...update});
                 }
+                
+                // Update UI (remove processing indicator)
+                updateStudentAttendanceUI(update.student_id, update.lecture_id, update.status, false);
             });
             
-            // Update homework data
-            updatedHomeworks.forEach(update => {
-                const index = homeworkData.findIndex(hw => 
-                    hw.lecture_id === selectedLectureId && hw.student_id === update.studentId
-                );
+            // Update homework map and data
+            [...homeworkChanges.added, ...homeworkChanges.modified].forEach(update => {
+                const key = DataUtils.compositeKey(update.lecture_id, update.student_id);
                 
+                // Update map
+                homeworkMap.set(key, {...update});
+                
+                // Update array
+                const index = homeworkData.findIndex(hw => hw.id === update.id);
                 if (index !== -1) {
-                    // Update existing record
-                    homeworkData[index].total_problems = currentTotalProblems;
-                    homeworkData[index].completed_problems = update.completedProblems;
-                    homeworkData[index].classification = update.classification;
-                    homeworkData[index].comments = update.comments;
+                    homeworkData[index] = {...update};
                 } else {
-                    // Create new record
-                    const newRecord = {
-                        id: generateHomeworkId(),
-                        lecture_id: selectedLectureId,
-                        student_id: update.studentId,
-                        total_problems: currentTotalProblems,
-                        completed_problems: update.completedProblems,
-                        classification: update.classification,
-                        comments: update.comments
-                    };
-                    
-                    homeworkData.push(newRecord);
+                    homeworkData.push({...update});
                 }
+                
+                // Update UI (remove processing indicator)
+                updateHomeworkUI(update.student_id, update.lecture_id, update.completed_problems, update.total_problems, false);
             });
+            
+            // Reset unsaved changes flag
+            hasUnsavedChanges = false;
             
             // Update statistics
             updateStatistics();
@@ -1184,17 +1346,17 @@
             // Refresh the class overview
             await renderClassAttendanceOverview(selectedClassId);
             
-            // Success message
-            alert("Attendance and homework data saved successfully!");
+            // Success notification
+            UIUtils.notify("Attendance and homework data saved successfully!", "success");
             
             // Close modal
             elements.editAttendanceModal.classList.remove('show');
             
         } catch (error) {
             console.error("Error saving attendance data:", error);
-            alert("Failed to save attendance data. Please try again.\nError: " + error.message);
+            UIUtils.notify("Failed to save attendance data. Please try again.\nError: " + error.message, "error");
         } finally {
-            await window.appUtils.hideLoadingIndicator();
+            UIUtils.hideLoading('edit-attendance-modal-content');
         }
     }
     
@@ -1213,14 +1375,16 @@
                         throw new Error(`Maximum retries (${maxRetries}) exceeded for API quota limits`);
                     }
                     
+                    UIUtils.notify(`API quota exceeded. Retrying in ${delay/1000} seconds (attempt ${retries + 1}/${maxRetries})`, "warning");
                     console.log(`API quota exceeded. Retrying in ${delay}ms (attempt ${retries + 1}/${maxRetries})`);
                     
                     // Wait for the delay period
                     await new Promise(resolve => setTimeout(resolve, delay));
                     
-                    // Increase retries and apply exponential backoff
+                    // Increase retries and apply exponential backoff with jitter
                     retries++;
-                    delay = Math.min(delay * 2, maxDelay);
+                    const jitter = 1 - API_RETRY.JITTER_FACTOR + Math.random() * API_RETRY.JITTER_FACTOR * 2;
+                    delay = Math.min(delay * 2 * jitter, maxDelay);
                     continue;
                 }
                 
@@ -1230,14 +1394,16 @@
                     throw error;
                 }
                 
+                UIUtils.notify(`API error. Retrying in ${delay/1000} seconds (attempt ${retries + 1}/${maxRetries})`, "warning");
                 console.log(`API error. Retrying in ${delay}ms (attempt ${retries + 1}/${maxRetries})`);
                 
                 // Wait for the delay period
                 await new Promise(resolve => setTimeout(resolve, delay));
                 
-                // Increase retries and apply exponential backoff
+                // Increase retries and apply exponential backoff with jitter
                 retries++;
-                delay = Math.min(delay * 2, maxDelay);
+                const jitter = 1 - API_RETRY.JITTER_FACTOR + Math.random() * API_RETRY.JITTER_FACTOR * 2;
+                delay = Math.min(delay * 2 * jitter, maxDelay);
             }
         }
     }
@@ -1319,6 +1485,32 @@
     function generateHomeworkId() {
         return 'HW' + Date.now().toString() + Math.floor(Math.random() * 1000);
     }
+    
+    // Add CSS for processing indicators
+    (function addProcessingStyles() {
+        const style = document.createElement('style');
+        style.innerHTML = `
+            @keyframes mini-spinner {
+                to { transform: rotate(360deg); }
+            }
+            
+            .mini-spinner {
+                width: 15px;
+                height: 15px;
+                border: 2px solid rgba(255, 255, 255, 0.3);
+                border-radius: 50%;
+                border-top-color: #fff;
+                animation: mini-spinner 0.8s linear infinite;
+            }
+            
+            @keyframes pulse {
+                0% { opacity: 0.5; }
+                50% { opacity: 1; }
+                100% { opacity: 0.5; }
+            }
+        `;
+        document.head.appendChild(style);
+    })();
     
     // Initialize the page
     initPage();
