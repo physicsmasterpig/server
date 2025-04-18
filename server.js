@@ -802,15 +802,15 @@ app.post('/save-attendance-homework', async (req, res) => {
         }
 
         // Invalidate relevant caches to ensure fresh data
-        dataCache.remove('sheet-' + sheetsRange.attendance);
-        dataCache.remove('sheet-' + sheetsRange.homework);
-        dataCache.remove('attendance-lookup');
-        dataCache.remove('homework-lookup');
+        dataCache.clear('sheet-' + sheetsRange.attendance);
+        dataCache.clear('sheet-' + sheetsRange.homework);
+        dataCache.clear('attendance-lookup');
+        dataCache.clear('homework-lookup');
 
         // Prepare batch operations for attendance updates
         const attendanceUpdates = [];
         const attendanceInserts = [];
-
+        
         // Process attendance data in parallel using Promise.all
         await Promise.all(attendance_data.map(async record => {
             const existingRecord = await findAttendanceRecord(record.lecture_id, record.student_id);
@@ -899,17 +899,39 @@ app.post('/save-attendance-homework', async (req, res) => {
             });
         }
 
-        // Return success response
+        // Make sure to invalidate caches again after all operations are complete
+        dataCache.clear('sheet-' + sheetsRange.attendance);
+        dataCache.clear('sheet-' + sheetsRange.homework);
+        dataCache.clear('attendance-lookup');
+        dataCache.clear('homework-lookup');
+
+        // Return success response with the updated records included in the response
+        // This lets the client know exactly what was saved
         res.status(200).json({
             success: true,
             message: 'Attendance and homework data saved successfully',
             attendance: {
                 updated: attendanceUpdates.length,
-                inserted: attendanceInserts.length
+                inserted: attendanceInserts.length,
+                records: [...attendanceInserts.map(arr => ({
+                    id: arr[0],
+                    lecture_id: arr[1],
+                    student_id: arr[2],
+                    status: arr[3]
+                })), ...attendance_data]
             },
             homework: {
                 updated: homeworkUpdates.length,
-                inserted: homeworkInserts.length
+                inserted: homeworkInserts.length,
+                records: [...homeworkInserts.map(arr => ({
+                    id: arr[0],
+                    lecture_id: arr[1],
+                    student_id: arr[2],
+                    total_problems: arr[3],
+                    completed_problems: arr[4],
+                    classification: arr[5],
+                    comments: arr[6]
+                })), ...homework_data]
             }
         });
 

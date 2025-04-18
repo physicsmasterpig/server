@@ -1297,45 +1297,47 @@
             const result = await response.json();
             console.log('Server response:', result);
             
-            // Update local data structures with the saved data
-            
-            // Update attendance map and data
-            [...attendanceChanges.added, ...attendanceChanges.modified].forEach(update => {
-                const key = DataUtils.compositeKey(update.lecture_id, update.student_id);
-                
-                // Update map
-                attendanceMap.set(key, {...update});
-                
-                // Update array
-                const index = attendanceData.findIndex(a => a.id === update.id);
-                if (index !== -1) {
-                    attendanceData[index] = {...update};
-                } else {
-                    attendanceData.push({...update});
-                }
-                
-                // Update UI (remove processing indicator)
-                updateStudentAttendanceUI(update.student_id, update.lecture_id, update.status, false);
-            });
+            // Update local data structures with the records returned from the server
+            if (result.attendance && result.attendance.records) {
+                result.attendance.records.forEach(update => {
+                    const key = DataUtils.compositeKey(update.lecture_id, update.student_id);
+                    
+                    // Update map
+                    attendanceMap.set(key, {...update});
+                    
+                    // Update array
+                    const index = attendanceData.findIndex(a => a.id === update.id);
+                    if (index !== -1) {
+                        attendanceData[index] = {...update};
+                    } else {
+                        attendanceData.push({...update});
+                    }
+                    
+                    // Update UI (remove processing indicator)
+                    updateStudentAttendanceUI(update.student_id, update.lecture_id, update.status, false);
+                });
+            }
             
             // Update homework map and data
-            [...homeworkChanges.added, ...homeworkChanges.modified].forEach(update => {
-                const key = DataUtils.compositeKey(update.lecture_id, update.student_id);
-                
-                // Update map
-                homeworkMap.set(key, {...update});
-                
-                // Update array
-                const index = homeworkData.findIndex(hw => hw.id === update.id);
-                if (index !== -1) {
-                    homeworkData[index] = {...update};
-                } else {
-                    homeworkData.push({...update});
-                }
-                
-                // Update UI (remove processing indicator)
-                updateHomeworkUI(update.student_id, update.lecture_id, update.completed_problems, update.total_problems, false);
-            });
+            if (result.homework && result.homework.records) {
+                result.homework.records.forEach(update => {
+                    const key = DataUtils.compositeKey(update.lecture_id, update.student_id);
+                    
+                    // Update map
+                    homeworkMap.set(key, {...update});
+                    
+                    // Update array
+                    const index = homeworkData.findIndex(hw => hw.id === update.id);
+                    if (index !== -1) {
+                        homeworkData[index] = {...update};
+                    } else {
+                        homeworkData.push({...update});
+                    }
+                    
+                    // Update UI (remove processing indicator)
+                    updateHomeworkUI(update.student_id, update.lecture_id, update.completed_problems, update.total_problems, false);
+                });
+            }
             
             // Reset unsaved changes flag
             hasUnsavedChanges = false;
@@ -1343,7 +1345,7 @@
             // Update statistics
             updateStatistics();
             
-            // Refresh the class overview
+            // Refresh the class overview to show the updated data
             await renderClassAttendanceOverview(selectedClassId);
             
             // Success notification
