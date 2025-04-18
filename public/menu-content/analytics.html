@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics Dashboard - BrainDB</title>
+    <style>
+        /* Analytics specific styles */
+        .analytics-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            padding: 20px;
+            height: calc(100vh - 80px);
+            overflow-y: auto;
+        }
+
+        .stats-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+        }
+
+        .stat-card {
+            background-color: var(--card-bg-color, #1a2035);
+            border-radius: 14px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .stat-title {
+            color: var(--secondary-text-color, #a3aed0);
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            color: var(--primary-text-color, #fff);
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        .stat-comparison {
+            color: var(--accent-green, #4CAF50);
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        .stat-comparison.negative {
+            color: var(--accent-red, #F44336);
+        }
+
+        .stat-metadata {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 6px;
+        }
+
+        .stat-metadata-item {
+            color: var(--secondary-text-color, #a3aed0);
+            font-size: 12px;
+        }
+
+        .chart-container {
+            background-color: var(--card-bg-color, #1a2035);
+            border-radius: 14px;
+            padding: 20px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chart-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .chart-title {
+            color: var(--primary-text-color, #fff);
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .chart-body {
+            flex: 1;
+            min-height: 250px;
+            position: relative;
+        }
+
+        .filters-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+            background-color: var(--card-bg-color, #1a2035);
+            border-radius: 14px;
+            padding: 20px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .filter-label {
+            color: var(--secondary-text-color, #a3aed0);
+            font-size: 14px;
+        }
+
+        .filter-select {
+            background-color: var(--input-bg-color, #293045);
+            border: 1px solid var(--border-color, #363c55);
+            color: var(--primary-text-color, #fff);
+            border-radius: 8px;
+            padding: 10px;
+            font-family: 'Poppins', sans-serif;
+        }
+
+        .apply-filters {
+            background-color: var(--accent-color, #725fff);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            padding: 10px 15px;
+            font-family: 'Poppins', sans-serif;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            align-self: flex-end;
+        }
+
+        .apply-filters:hover {
+            background-color: var(--accent-hover, #5a46e6);
+        }
+
+        .tab-navigation {
+            display: flex;
+            border-bottom: 1px solid var(--border-color, #363c55);
+            overflow-x: auto;
+            margin-bottom: 20px;
+            scrollbar-width: none;
+        }
+
+        .tab-navigation::-webkit-scrollbar {
+            display: none;
+        }
+
+        .tab-item {
+            color: var(--secondary-text-color, #a3aed0);
+            padding: 15px 20px;
+            cursor: pointer;
+            white-space: nowrap;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .tab-item.active {
+            color: var(--accent-color, #725fff);
+            border-bottom-color: var(--accent-color, #725fff);
+        }
+
+        .tab-content {
+            display: none;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .tab-content.active {
+            display: flex;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 12px;
+            text-align: left;
+            font-size: 14px;
+        }
+
+        .data-table th {
+            color: var(--secondary-text-color, #a3aed0);
+            border-bottom: 1px solid var(--border-color, #363c55);
+        }
+
+        .data-table td {
+            color: var(--primary-text-color, #fff);
+            border-bottom: 1px solid var(--border-color, #363c55);
+        }
+
+        .data-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .comparison-section {
+            background-color: var(--card-bg-color, #1a2035);
+            border-radius: 14px;
+            padding: 20px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .comparison-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .comparison-results {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .multi-select-container {
+            background-color: var(--input-bg-color, #293045);
+            border: 1px solid var(--border-color, #363c55);
+            border-radius: 8px;
+            padding: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--accent-color, #725fff) var(--input-bg-color, #293045);
+        }
+
+        .multi-select-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 5px 0;
+        }
+
+        .multi-select-item label {
+            color: var (--primary-text-color, #fff);
+            cursor: pointer;
+        }
+
+        .multi-select-item input[type="checkbox"] {
+            accent-color: var(--accent-color, #725fff);
+        }
+
+        .date-filter {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        /* Responsive adjustments */
+        @media screen and (max-width: 768px) {
+            .stats-cards,
+            .chart-row,
+            .filters-section,
+            .comparison-controls {
+                grid-template-columns: 1fr;
+            }
+
+            .apply-filters {
+                width: 100%;
+                margin-top: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="analytics-container">
+        <h1>Analytics Dashboard</h1>
+        
+        <!-- Filter Controls -->
+        <div class="filters-section">
+            <div class="filter-group">
+                <label class="filter-label">Analysis Scope</label>
+                <select id="analysis-scope" class="filter-select">
+                    <option value="all">All Data</option>
+                    <option value="by-class">By Class</option>
+                    <option value="by-student">By Student</option>
+                    <option value="by-school">By School</option>
+                    <option value="by-generation">By Generation</option>
+                </select>
+            </div>
+            
+            <div id="scope-filter-container" class="filter-group">
+                <!-- Dynamic filters will be added here based on scope selection -->
+            </div>
+            
+            <div class="filter-group date-filter">
+                <label class="filter-label">Time Period</label>
+                <select id="time-period" class="filter-select">
+                    <option value="current-semester">Current Semester</option>
+                    <option value="last-semester">Last Semester</option>
+                    <option value="current-year">This Academic Year</option>
+                    <option value="last-year">Last Academic Year</option>
+                    <option value="custom">Custom Range</option>
+                </select>
+                <!-- Custom date picker will appear here if needed -->
+            </div>
+            
+            <button id="apply-filters" class="apply-filters">Apply Filters</button>
+        </div>
+        
+        <!-- Summary Stats Cards -->
+        <div class="stats-cards">
+            <div class="stat-card">
+                <div class="stat-title">Total Students</div>
+                <div id="total-students-stat" class="stat-value">28</div>
+                <div class="stat-metadata">
+                    <div id="active-students" class="stat-metadata-item">24 active</div>
+                    <div id="recent-enrollments" class="stat-metadata-item">3 new</div>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-title">Attendance Rate</div>
+                <div id="attendance-rate-stat" class="stat-value">78%</div>
+                <div id="attendance-compare" class="stat-comparison">+5% vs. average</div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-title">Average Exam Score</div>
+                <div id="avg-exam-score-stat" class="stat-value">82%</div>
+                <div id="score-compare" class="stat-comparison">+3% vs. previous</div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-title">Homework Completion</div>
+                <div id="homework-completion-stat" class="stat-value">91%</div>
+                <div id="homework-compare" class="stat-comparison">+1% vs. average</div>
+            </div>
+        </div>
+        
+        <!-- Tab Navigation -->
+        <div class="tab-navigation">
+            <div class="tab-item active" data-tab="attendance">Attendance Analysis</div>
+            <div class="tab-item" data-tab="performance">Performance Analysis</div>
+            <div class="tab-item" data-tab="comparison">Comparative Analysis</div>
+        </div>
+        
+        <!-- Tab Content - Attendance Analysis -->
+        <div id="attendance-tab" class="tab-content active">
+            <div class="chart-row">
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <div class="chart-title">Attendance Patterns</div>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="attendance-pattern-chart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <div class="chart-title">Attendance by Day</div>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="attendance-by-day-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chart-row">
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <div class="chart-title">Attendance Distribution</div>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="attendance-distribution-chart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <div class="chart-title">Students with Low Attendance</div>
+                    </div>
+                    <div class="chart-body">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Class</th>
+                                    <th>Rate</th>
+                                    <th>Missed</th>
+                                    <th>Pattern</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Kim Min-ji</td>
+                                    <td>Math 101</td>
+                                    <td>65%</td>
+                                    <td>7</td>
+                                    <td>Monday absences</td>
+                                </tr>
+                                <tr>
+                                    <td>Park Ji-hun</td>
+                                    <td>Science 202</td>
+                                    <td>70%</td>
+                                    <td>6</td>
+                                    <td>Random pattern</td>
+                                </tr>
+                                <tr>
+                                    <td>Lee Seo-yeon</td>
+                                    <td>English 101</td>
+                                    <td>72%</td>
+                                    <td>5</td>
+                                    <td>Afternoon sessions</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tab Content - Performance Analysis -->
+        <div id="performance-tab" class="tab-content">
+            <div class="chart-row">
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <div class="chart-title">Grade Distribution</div>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="grade-distribution-chart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <div class="chart-title">Subject Performance</div>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="subject-performance-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chart-row">
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <div class="chart-title">Performance vs. Attendance</div>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="performance-attendance-chart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <div class="chart-title">Top Performing Students</div>
+                    </div>
+                    <div class="chart-body">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Class</th>
+                                    <th>Average</th>
+                                    <th>Best Subject</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Han So-mi</td>
+                                    <td>Science 202</td>
+                                    <td>96%</td>
+                                    <td>Mathematics</td>
+                                </tr>
+                                <tr>
+                                    <td>Kang Tae-woo</td>
+                                    <td>Mathematics 101</td>
+                                    <td>94%</td>
+                                    <td>Physics</td>
+                                </tr>
+                                <tr>
+                                    <td>Jung Hae-in</td>
+                                    <td>English 101</td>
+                                    <td>92%</td>
+                                    <td>Literature</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tab Content - Comparative Analysis -->
+        <div id="comparison-tab" class="tab-content">
+            <div class="comparison-section">
+                <div class="comparison-controls">
+                    <div class="filter-group">
+                        <label class="filter-label">Compare</label>
+                        <select id="comparison-type" class="filter-select">
+                            <option value="classes">Classes</option>
+                            <option value="students">Students</option>
+                            <option value="schools">Schools</option>
+                            <option value="generations">Generations</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label class="filter-label">Metric</label>
+                        <select id="comparison-metric" class="filter-select">
+                            <option value="attendance">Attendance</option>
+                            <option value="exam-scores">Exam Scores</option>
+                            <option value="homework">Homework Completion</option>
+                            <option value="improvement">Improvement Over Time</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label class="filter-label">Select Items</label>
+                        <div id="comparison-items" class="multi-select-container">
+                            <div class="multi-select-item">
+                                <input type="checkbox" id="item1" checked>
+                                <label for="item1">Mathematics 101</label>
+                            </div>
+                            <div class="multi-select-item">
+                                <input type="checkbox" id="item2" checked>
+                                <label for="item2">Science 202</label>
+                            </div>
+                            <div class="multi-select-item">
+                                <input type="checkbox" id="item3">
+                                <label for="item3">English 101</label>
+                            </div>
+                            <div class="multi-select-item">
+                                <input type="checkbox" id="item4">
+                                <label for="item4">History 101</label>
+                            </div>
+                            <div class="multi-select-item">
+                                <input type="checkbox" id="item5">
+                                <label for="item5">Computer Science 202</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button id="run-comparison" class="apply-filters">Run Comparison</button>
+                </div>
+                
+                <div class="comparison-results">
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <div class="chart-title">Comparison Data</div>
+                        </div>
+                        <div class="chart-body">
+                            <canvas id="comparison-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <div class="chart-title">Statistical Analysis</div>
+                        </div>
+                        <div class="chart-body">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Item</th>
+                                        <th>Average</th>
+                                        <th>Median</th>
+                                        <th>Std Dev</th>
+                                        <th>Min</th>
+                                        <th>Max</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="stats-table">
+                                    <tr>
+                                        <td>Mathematics 101</td>
+                                        <td>85.2%</td>
+                                        <td>86.0%</td>
+                                        <td>7.4</td>
+                                        <td>68.0%</td>
+                                        <td>98.5%</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Science 202</td>
+                                        <td>81.7%</td>
+                                        <td>83.0%</td>
+                                        <td>8.2</td>
+                                        <td>62.5%</td>
+                                        <td>97.0%</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <div class="chart-title">Correlation Analysis</div>
+                        </div>
+                        <div class="chart-body">
+                            <canvas id="correlation-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load Analytics JS -->
+    <script src="analytics.js"></script>
+</body>
+</html>

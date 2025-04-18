@@ -1,0 +1,22 @@
+# Ignore credentials and sensitive files
+credential.json
+
+# Logs
+*.log
+combined.log
+error.log
+
+# Node modules
+node_modules/
+
+# Environment variables
+.env
+.env.local
+
+# IDE files
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,13 @@
+{
+  "build": {
+    "env": {
+      "NODE_ENV": "production"
+    },
+    "command": "npm ci --only=production"
+  },
+  "deploy": {
+    "strategy": "nodejs",
+    "port": 8080,
+    "start": "node server.js"
+  }
+}

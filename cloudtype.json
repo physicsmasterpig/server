@@ -1,0 +1,17 @@
+{
+  "name": "braindb-app",
+  "type": "nodejs",
+  "options": {
+    "nodejs": {
+      "version": "18",
+      "main": "server.js"
+    }
+  },
+  "env": {
+    "NODE_ENV": "production",
+    "PORT": "8080",
+    "SPREADSHEET_ID": "1NbcwKdFAwm0RRw5JIpaOMtCibWM_9gsUbYCOQ2GUNlI",
+    "GOOGLE_CLIENT_EMAIL": "manager@braindb-430809.iam.gserviceaccount.com",
+    "GOOGLE_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDCFsGzvrBm46AR\nj2bOGi0XcQGCQmrxX1eTdGJQhSDqKlwmji36Qx+2ZjL/VJjYe9GtvEBrV/stdHLl\niMXxRGP2Cpvitmx7Y7H3tkluI2dKSuDyUYA4PGTayM9t4LdHxCfIt/DgPU8dmAiO\nVsqPeTvo7h/Eu0R0PphObthkahPVAzvNrFbH5c1BdY0jgFlTZx+3bJxONiEqe9yr\nQskbt2DxlO4L0POMqnSwEsWs+aM4ERUf/IlW/IFQbBnG9DsnTJ3lW7O2Wy2ysRt5\n3F6MK1FTDm0o5jrGAKHC76m4qcP+Xq2orz4+dkqgQ4kz3LQ7KfXe4X84dCKBRdTs\nUf3iVgsjAgMBAAECggEAGod9xpHkDsxCTuQpCzbsvu2FZUaq039SuycHYTYxP5C2\ns9ZvVmviY84oXloz4jNaf8Lhk0qdXKM0KUe+trHAcBsXH7ALt/nyk4dpFhLkxXTi\ntnyJaCZpKraUE9LJepfHUFpEJIJ80/C6Cqq2WVIa7EXQNdXbD4CW1PG1xlPxjgX8\nHTr72Dfr//nrESB8tf4AY6VIwOSs6mwXnUMQ2Y7mC5O4ozzENtwDLm7+g/sS52Om\nCgPie3kNwdnLZZVCkQNhFnssFHyrdKvGJpbEH49NoBgSbTqLEmZMbcJ+bx0TwW+F\nQq7Ann4PeENoRFglzAdPEBVrVd+2ORwz1okW0OtOsQKBgQDqWR0zE4Pu7XQFGEQx\nYt5F7huwPjb/fsIVmJOfsq4itl7iJUE8H7YPFe1yEsfyVB7qEuMlrwUWygBq3Yym\nu5J65e3EoNU8/WDIMyoq1bxHoYA+ZwXNndunu4WkbzzbgvzNwq8KaarQkDCikp77\ntQDrgnmdb/7G4RFKyDhkbc7+rwKBgQDUBWrQn4b0yxA/bSfBj2gllbbDE6u/N6vG\nAWdfASJnJCB+IJdkGnj/KqFTvvT3aD7UhvUGKvr7VOEo16rnoa79DOklOF3gNYkr\n8VYpPmxf9WhjTabOENfK/PxGvcBF+VEbrWqWyge4S8bBJJKmZpQtEmAgGlUej2Oq\neFIlFgu3zQKBgCQVYpyZtafVYhbivKVKDuV/mz3Q5pECiIngu2JMlel8YTG7AMds\nLpE2FCCLacQTVcs+60DDKSpwIg5SXLTTjuNjge/Tv+GrNfq9fhGoZVw2LtPs8wTM\n+KRkCFjgU+OM0LYx8tfMm2OPwB1YLCifnyukJGuscfNXdl0oZR55lfS7AoGAaXjQ\nbDwPzNL/oC3S6y1F5/yUUHMGqzcsknG8VLyhuqF0MIpSBZBNxNIWMyz5e+I170+7\nsHfNJx5QbBrtgBEklenISaXCvXikZmHGNPpCu3G/njbQ1g3265nyfdaDQcwHFzer\noJucP4gitY5WDcVVzR4pB49R7MP0FqeIZb6T0bkCgYBzA9Jt71Xl8+LuMSon485h\nHPSQgpoXc9+jf0vPvPYR2sBH8iEDX1K6LOPdgRqqX+Dw2z9BsqegC+gJItN+/XDc\n2r+R6rKRmbTUkjEE2/G24DsZ4Z3jz9c/g7nwyuTzbKiAb6JPcUe3dw6HOhWGesYG\nieEeKtqnwQvuyqlbiyy8Dw==\n-----END PRIVATE KEY-----\n"
+  }
+}
