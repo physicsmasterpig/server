@@ -1551,3 +1551,647 @@ async function initializeServer() {
 
 // Start the initialization process
 initializeServer();
+
+// Analytics endpoints
+app.get('/analytics/summary', async (req, res) => {
+  try {
+    // Get query parameters
+    const { scope, timeFrame, classId, studentId, schoolId, generationId, dateFrom, dateTo } = req.query;
+    
+    // Fetch data from Google Sheets
+    const [studentRows, attendanceRows, examRows, scoreRows, homeworkRows, classRows] = await Promise.all([
+      fetchSheetData(sheetsRange.student),
+      fetchSheetData(sheetsRange.attendance),
+      fetchSheetData(sheetsRange.exam),
+      fetchSheetData(sheetsRange.score),
+      fetchSheetData(sheetsRange.homework),
+      fetchSheetData(sheetsRange.class)
+    ]);
+    
+    // Filter data based on scope and time frame
+    let filteredStudents = [...studentRows];
+    let filteredAttendance = [...attendanceRows];
+    let filteredScores = [...scoreRows];
+    let filteredHomework = [...homeworkRows];
+    
+    // Apply filters based on scope
+    if (scope === 'by-class' && classId && classId !== 'all') {
+      // Get enrollments for this class
+      const enrollmentsRows = await fetchSheetData(sheetsRange.enrollment);
+      const classEnrollments = enrollmentsRows.filter(row => row[2] === classId);
+      const enrolledStudentIds = classEnrollments.map(row => row[1]);
+      
+      // Filter students
+      filteredStudents = filteredStudents.filter(row => enrolledStudentIds.includes(row[0]));
+      
+      // Filter lectures for this class
+      const lectureRows = await fetchSheetData(sheetsRange.lecture);
+      const classLectures = lectureRows.filter(row => row[1] === classId);
+      const lecturesToInclude = classLectures.map(row => row[0]);
+      
+      // Filter attendance records
+      filteredAttendance = filteredAttendance.filter(row => lecturesToInclude.includes(row[1]));
+      
+      // Filter homework records
+      filteredHomework = filteredHomework.filter(row => lecturesToInclude.includes(row[1]));
+      
+      // Filter exams and scores
+      const classExams = examRows.filter(row => row[3] === classId);
+      const examIdsToInclude = classExams.map(row => row[0]);
+      filteredScores = filteredScores.filter(row => examIdsToInclude.includes(row[1]));
+    } else if (scope === 'by-student' && studentId && studentId !== 'all') {
+      // Filter by student
+      filteredStudents = filteredStudents.filter(row => row[0] === studentId);
+      filteredAttendance = filteredAttendance.filter(row => row[2] === studentId);
+      filteredScores = filteredScores.filter(row => row[2] === studentId);
+      filteredHomework = filteredHomework.filter(row => row[2] === studentId);
+    } else if (scope === 'by-school' && schoolId && schoolId !== 'all') {
+      // Filter students by school
+      filteredStudents = filteredStudents.filter(row => row[2] === schoolId);
+      
+      // Get IDs of filtered students
+      const studentIds = filteredStudents.map(row => row[0]);
+      
+      // Filter other data by these student IDs
+      filteredAttendance = filteredAttendance.filter(row => studentIds.includes(row[2]));
+      filteredScores = filteredScores.filter(row => studentIds.includes(row[2]));
+      filteredHomework = filteredHomework.filter(row => studentIds.includes(row[2]));
+    } else if (scope === 'by-generation' && generationId && generationId !== 'all') {
+      // Filter students by generation
+      filteredStudents = filteredStudents.filter(row => row[3] === generationId);
+      
+      // Get IDs of filtered students
+      const studentIds = filteredStudents.map(row => row[0]);
+      
+      // Filter other data by these student IDs
+      filteredAttendance = filteredAttendance.filter(row => studentIds.includes(row[2]));
+      filteredScores = filteredScores.filter(row => studentIds.includes(row[2]));
+      filteredHomework = filteredHomework.filter(row => studentIds.includes(row[2]));
+    }
+    
+    // Apply date filters if custom date range is provided
+    if (dateFrom && dateTo) {
+      const fromDate = new Date(dateFrom);
+      const toDate = new Date(dateTo);
+      
+      // Get lectures within the date range
+      const lectureRows = await fetchSheetData(sheetsRange.lecture);
+      const lecturesInRange = lectureRows.filter(row => {
+        const lectureDate = new Date(row[2]);
+        return lectureDate >= fromDate && lectureDate <= toDate;
+      });
+      
+      const lectureIdsInRange = lecturesInRange.map(row => row[0]);
+      
+      // Filter attendance and homework by lecture dates
+      filteredAttendance = filteredAttendance.filter(row => lectureIdsInRange.includes(row[1]));
+      filteredHomework = filteredHomework.filter(row => lectureIdsInRange.includes(row[1]));
+    }
+    
+    // Calculate summary statistics
+    
+    // Student stats
+    const totalStudents = filteredStudents.length;
+    const activeStudents = filteredStudents.filter(row => row[6] === 'active').length;
+    
+    // Calculate recent enrollments (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const enrollmentRows = await fetchSheetData(sheetsRange.enrollment);
+    const filteredEnrollments = enrollmentRows.filter(row => {
+      try {
+        const enrollmentDate = new Date(row[3]);
+        return enrollmentDate >= thirtyDaysAgo;
+      } catch (e) {
+        return false;
+      }
+    });
+    const recentEnrollments = filteredEnrollments.length;
+    
+    // Attendance stats
+    let attendanceRate = 0;
+    let attendanceComparison = 0;
+    if (filteredAttendance.length > 0) {
+      const attendedCount = filteredAttendance.filter(row => row[3] === 'present').length;
+      attendanceRate = Math.round((attendedCount / filteredAttendance.length) * 100);
+      
+      // Compare to overall average
+      const allAttendedCount = attendanceRows.filter(row => row[3] === 'present').length;
+      const overallAttendanceRate = (allAttendedCount / attendanceRows.length) * 100;
+      attendanceComparison = Math.round(attendanceRate - overallAttendanceRate);
+    }
+    
+    // Exam score stats
+    let avgExamScore = 0;
+    let scoreComparison = 0;
+    if (filteredScores.length > 0) {
+      // Calculate average score
+      const totalScore = filteredScores.reduce((sum, row) => sum + (parseFloat(row[4]) || 0), 0);
+      avgExamScore = Math.round((totalScore / filteredScores.length) * 100);
+      
+      // Calculate previous period for comparison
+      const previousPeriodScores = scoreRows; // Simplified - in reality would filter by previous time period
+      if (previousPeriodScores.length > 0) {
+        const prevTotalScore = previousPeriodScores.reduce((sum, row) => sum + (parseFloat(row[4]) || 0), 0);
+        const prevAvgScore = (prevTotalScore / previousPeriodScores.length) * 100;
+        scoreComparison = Math.round(avgExamScore - prevAvgScore);
+      }
+    }
+    
+    // Homework completion stats
+    let homeworkCompletionRate = 0;
+    let homeworkComparison = 0;
+    if (filteredHomework.length > 0) {
+      const totalProblems = filteredHomework.reduce((sum, row) => sum + (parseInt(row[3]) || 0), 0);
+      const completedProblems = filteredHomework.reduce((sum, row) => sum + (parseInt(row[4]) || 0), 0);
+      
+      if (totalProblems > 0) {
+        homeworkCompletionRate = Math.round((completedProblems / totalProblems) * 100);
+        
+        // Compare to overall average
+        const allTotalProblems = homeworkRows.reduce((sum, row) => sum + (parseInt(row[3]) || 0), 0);
+        const allCompletedProblems = homeworkRows.reduce((sum, row) => sum + (parseInt(row[4]) || 0), 0);
+        
+        if (allTotalProblems > 0) {
+          const overallCompletionRate = (allCompletedProblems / allTotalProblems) * 100;
+          homeworkComparison = Math.round(homeworkCompletionRate - overallCompletionRate);
+        }
+      }
+    }
+    
+    // Build the summary response
+    const summary = {
+      students: {
+        total: totalStudents,
+        active: activeStudents,
+        newEnrollments: recentEnrollments
+      },
+      attendance: {
+        rate: attendanceRate,
+        comparison: attendanceComparison
+      },
+      performance: {
+        averageScore: avgExamScore,
+        comparison: scoreComparison
+      },
+      homework: {
+        completionRate: homeworkCompletionRate,
+        comparison: homeworkComparison
+      }
+    };
+    
+    res.status(200).json({ success: true, summary });
+    
+  } catch (err) {
+    logger.error('Error generating analytics summary:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Attendance analytics endpoint
+app.get('/analytics/attendance', async (req, res) => {
+  try {
+    // Get query parameters
+    const { scope, classId, studentId, dateFrom, dateTo } = req.query;
+    
+    // Fetch required data
+    const [attendanceRows, lectureRows, studentRows] = await Promise.all([
+      fetchSheetData(sheetsRange.attendance),
+      fetchSheetData(sheetsRange.lecture),
+      fetchSheetData(sheetsRange.student)
+    ]);
+    
+    // Filter by scope and date range
+    let filteredAttendance = [...attendanceRows];
+    let filteredLectures = [...lectureRows];
+    let filteredStudents = [...studentRows];
+    
+    // Apply the same filtering logic as in the summary endpoint
+    // ... (similar filtering logic as in summary endpoint)
+    
+    // Calculate attendance patterns over time
+    const lecturesByWeek = {};
+    filteredLectures.forEach(lecture => {
+      try {
+        const lectureDate = new Date(lecture[2]);
+        const weekStart = new Date(lectureDate);
+        weekStart.setDate(lectureDate.getDate() - lectureDate.getDay());
+        const weekKey = weekStart.toISOString().split('T')[0];
+        
+        if (!lecturesByWeek[weekKey]) {
+          lecturesByWeek[weekKey] = [];
+        }
+        lecturesByWeek[weekKey].push(lecture[0]); // Add lecture ID
+      } catch (e) {
+        // Skip invalid dates
+      }
+    });
+    
+    // Calculate attendance rates by week
+    const attendanceByWeek = {};
+    Object.keys(lecturesByWeek).sort().forEach(weekKey => {
+      const weekLectures = lecturesByWeek[weekKey];
+      const weekAttendance = filteredAttendance.filter(att => weekLectures.includes(att[1]));
+      
+      if (weekAttendance.length > 0) {
+        const presentCount = weekAttendance.filter(att => att[3] === 'present').length;
+        const weekRate = Math.round((presentCount / weekAttendance.length) * 100);
+        attendanceByWeek[weekKey] = weekRate;
+      }
+    });
+    
+    // Calculate attendance by day of week
+    const attendanceByDay = {
+      Monday: { total: 0, present: 0, rate: 0 },
+      Tuesday: { total: 0, present: 0, rate: 0 },
+      Wednesday: { total: 0, present: 0, rate: 0 },
+      Thursday: { total: 0, present: 0, rate: 0 },
+      Friday: { total: 0, present: 0, rate: 0 }
+    };
+    
+    // Map lectures to days
+    const lectureDayMap = {};
+    filteredLectures.forEach(lecture => {
+      try {
+        const lectureDate = new Date(lecture[2]);
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const dayName = days[lectureDate.getDay()];
+        if (dayName !== 'Sunday' && dayName !== 'Saturday') { // Skip weekends if not needed
+          lectureDayMap[lecture[0]] = dayName;
+        }
+      } catch (e) {
+        // Skip invalid dates
+      }
+    });
+    
+    // Calculate attendance by day
+    filteredAttendance.forEach(att => {
+      const lectureId = att[1];
+      const dayName = lectureDayMap[lectureId];
+      
+      if (dayName && attendanceByDay[dayName]) {
+        attendanceByDay[dayName].total++;
+        if (att[3] === 'present') {
+          attendanceByDay[dayName].present++;
+        }
+      }
+    });
+    
+    // Calculate rates
+    Object.keys(attendanceByDay).forEach(day => {
+      const dayData = attendanceByDay[day];
+      if (dayData.total > 0) {
+        dayData.rate = Math.round((dayData.present / dayData.total) * 100);
+      }
+    });
+    
+    // Find students with low attendance
+    const studentAttendance = {};
+    filteredAttendance.forEach(att => {
+      const studentId = att[2];
+      if (!studentAttendance[studentId]) {
+        studentAttendance[studentId] = { total: 0, present: 0, pattern: {} };
+      }
+      
+      studentAttendance[studentId].total++;
+      if (att[3] === 'present') {
+        studentAttendance[studentId].present++;
+      }
+      
+      // Track attendance patterns by day
+      const lectureId = att[1];
+      const dayName = lectureDayMap[lectureId];
+      if (dayName) {
+        if (!studentAttendance[studentId].pattern[dayName]) {
+          studentAttendance[studentId].pattern[dayName] = { total: 0, absent: 0 };
+        }
+        studentAttendance[studentId].pattern[dayName].total++;
+        if (att[3] !== 'present') {
+          studentAttendance[studentId].pattern[dayName].absent++;
+        }
+      }
+    });
+    
+    // Calculate rates and identify patterns
+    Object.keys(studentAttendance).forEach(studentId => {
+      const data = studentAttendance[studentId];
+      if (data.total > 0) {
+        data.rate = Math.round((data.present / data.total) * 100);
+        data.missed = data.total - data.present;
+        
+        // Determine attendance pattern
+        let worstDay = null;
+        let worstDayAbsentRate = 0;
+        let hasPattern = false;
+        
+        Object.keys(data.pattern).forEach(day => {
+          const dayPattern = data.pattern[day];
+          if (dayPattern.total > 0) {
+            const absentRate = dayPattern.absent / dayPattern.total;
+            if (absentRate > worstDayAbsentRate && absentRate > 0.5) { // More than 50% absences on this day
+              worstDay = day;
+              worstDayAbsentRate = absentRate;
+              hasPattern = true;
+            }
+          }
+        });
+        
+        data.patternDescription = hasPattern ? 
+          `${worstDay} absences (${Math.round(worstDayAbsentRate * 100)}%)` : 
+          'Random pattern';
+      }
+    });
+    
+    // Get student names and low performers
+    const lowAttendanceThreshold = 75; // Configurable threshold
+    const studentsWithLowAttendance = Object.keys(studentAttendance)
+      .filter(studentId => {
+        const data = studentAttendance[studentId];
+        return data.total > 0 && data.rate < lowAttendanceThreshold;
+      })
+      .map(studentId => {
+        const studentData = filteredStudents.find(s => s[0] === studentId);
+        const attendanceData = studentAttendance[studentId];
+        
+        return {
+          id: studentId,
+          name: studentData ? studentData[1] : 'Unknown',
+          class: 'Multiple Classes', // In a real implementation, would look up class name
+          rate: attendanceData.rate,
+          missed: attendanceData.missed,
+          pattern: attendanceData.patternDescription
+        };
+      })
+      .sort((a, b) => a.rate - b.rate) // Sort by attendance rate (lowest first)
+      .slice(0, 10); // Take top 10 worst attendance
+    
+    // Build the attendance analytics response
+    const attendanceAnalytics = {
+      patterns: {
+        labels: Object.keys(attendanceByWeek),
+        data: Object.values(attendanceByWeek)
+      },
+      byDay: {
+        labels: Object.keys(attendanceByDay),
+        data: Object.keys(attendanceByDay).map(day => attendanceByDay[day].rate)
+      },
+      distribution: {
+        labels: ['90-100%', '80-89%', '70-79%', '60-69%', '<60%'],
+        data: calculateAttendanceDistribution(studentAttendance)
+      },
+      lowAttendanceStudents: studentsWithLowAttendance
+    };
+    
+    res.status(200).json({ success: true, attendanceAnalytics });
+    
+  } catch (err) {
+    logger.error('Error generating attendance analytics:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Performance analytics endpoint
+app.get('/analytics/performance', async (req, res) => {
+  try {
+    // Get query parameters
+    const { scope, classId, studentId, dateFrom, dateTo } = req.query;
+    
+    // Fetch required data
+    const [scoreRows, examRows, examProblemRows, studentRows] = await Promise.all([
+      fetchSheetData(sheetsRange.score),
+      fetchSheetData(sheetsRange.exam),
+      fetchSheetData(sheetsRange.exam_problem),
+      fetchSheetData(sheetsRange.student)
+    ]);
+    
+    // Filter by scope and other criteria
+    // ... (similar filtering logic)
+    
+    // Calculate grade distribution
+    const scores = scoreRows.map(row => parseFloat(row[4]) || 0);
+    const gradeDistribution = calculateGradeDistribution(scores);
+    
+    // Extract problems by subject
+    const problemsByExam = {};
+    examProblemRows.forEach(row => {
+      const examId = row[1];
+      const problemId = row[2];
+      
+      if (!problemsByExam[examId]) {
+        problemsByExam[examId] = [];
+      }
+      
+      problemsByExam[examId].push(problemId);
+    });
+    
+    // Calculate performance by subject (simplified - in real app would categorize by subject)
+    const examSubjects = {};
+    examRows.forEach(exam => {
+      const examId = exam[0];
+      const title = exam[1];
+      
+      // Simplified: derive subject from exam title
+      let subject = 'Other';
+      if (title) {
+        if (title.toLowerCase().includes('math')) subject = 'Mathematics';
+        else if (title.toLowerCase().includes('science')) subject = 'Science';
+        else if (title.toLowerCase().includes('english')) subject = 'English';
+        else if (title.toLowerCase().includes('social') || title.toLowerCase().includes('history')) subject = 'Social Studies';
+        else if (title.toLowerCase().includes('art')) subject = 'Arts';
+      }
+      
+      examSubjects[examId] = subject;
+    });
+    
+    // Calculate average score by subject
+    const subjectScores = {
+      'Mathematics': { total: 0, count: 0 },
+      'Science': { total: 0, count: 0 },
+      'English': { total: 0, count: 0 },
+      'Social Studies': { total: 0, count: 0 },
+      'Arts': { total: 0, count: 0 }
+    };
+    
+    scoreRows.forEach(score => {
+      const examId = score[1];
+      const subject = examSubjects[examId] || 'Other';
+      const scoreValue = parseFloat(score[4]) || 0;
+      
+      if (subjectScores[subject]) {
+        subjectScores[subject].total += scoreValue;
+        subjectScores[subject].count++;
+      }
+    });
+    
+    const subjectPerformance = {
+      labels: Object.keys(subjectScores),
+      data: Object.keys(subjectScores).map(subject => {
+        const data = subjectScores[subject];
+        return data.count > 0 ? Math.round((data.total / data.count) * 100) : 0;
+      })
+    };
+    
+    // Calculate correlation between attendance and performance
+    const attendanceRows = await fetchSheetData(sheetsRange.attendance);
+    const performanceAttendanceCorrelation = [];
+    
+    // Get student IDs who have both scores and attendance records
+    const studentIdsWithScores = [...new Set(scoreRows.map(row => row[2]))];
+    
+    studentIdsWithScores.forEach(studentId => {
+      const studentScores = scoreRows.filter(row => row[2] === studentId);
+      const studentAttendance = attendanceRows.filter(row => row[2] === studentId);
+      
+      if (studentScores.length > 0 && studentAttendance.length > 0) {
+        // Calculate average score
+        const totalScore = studentScores.reduce((sum, row) => sum + (parseFloat(row[4]) || 0), 0);
+        const avgScore = (totalScore / studentScores.length) * 100;
+        
+        // Calculate attendance rate
+        const presentCount = studentAttendance.filter(att => att[3] === 'present').length;
+        const attendanceRate = (presentCount / studentAttendance.length) * 100;
+        
+        performanceAttendanceCorrelation.push({
+          x: attendanceRate,
+          y: avgScore
+        });
+      }
+    });
+    
+    // Find top performing students
+    const studentPerformance = {};
+    scoreRows.forEach(score => {
+      const studentId = score[2];
+      const examId = score[1];
+      const scoreValue = parseFloat(score[4]) || 0;
+      const subject = examSubjects[examId] || 'Other';
+      
+      if (!studentPerformance[studentId]) {
+        studentPerformance[studentId] = {
+          totalScore: 0,
+          count: 0,
+          bySubject: {}
+        };
+      }
+      
+      studentPerformance[studentId].totalScore += scoreValue;
+      studentPerformance[studentId].count++;
+      
+      if (!studentPerformance[studentId].bySubject[subject]) {
+        studentPerformance[studentId].bySubject[subject] = {
+          total: 0,
+          count: 0
+        };
+      }
+      
+      studentPerformance[studentId].bySubject[subject].total += scoreValue;
+      studentPerformance[studentId].bySubject[subject].count++;
+    });
+    
+    // Calculate averages and best subjects
+    Object.keys(studentPerformance).forEach(studentId => {
+      const data = studentPerformance[studentId];
+      
+      if (data.count > 0) {
+        data.average = (data.totalScore / data.count) * 100;
+        
+        // Find best subject
+        let bestSubject = null;
+        let bestSubjectAvg = 0;
+        
+        Object.keys(data.bySubject).forEach(subject => {
+          const subjectData = data.bySubject[subject];
+          if (subjectData.count > 0) {
+            const subjectAvg = subjectData.total / subjectData.count;
+            if (subjectAvg > bestSubjectAvg) {
+              bestSubject = subject;
+              bestSubjectAvg = subjectAvg;
+            }
+          }
+        });
+        
+        data.bestSubject = bestSubject || 'None';
+      }
+    });
+    
+    // Get top performers
+    const topPerformers = Object.keys(studentPerformance)
+      .filter(studentId => {
+        const data = studentPerformance[studentId];
+        return data.count >= 3; // At least 3 scores to be considered
+      })
+      .map(studentId => {
+        const studentData = studentRows.find(s => s[0] === studentId);
+        const perfData = studentPerformance[studentId];
+        
+        // Find class (simplified)
+        const classId = "Unknown"; // In a real implementation, would determine primary class
+        
+        return {
+          id: studentId,
+          name: studentData ? studentData[1] : 'Unknown',
+          class: classId,
+          average: Math.round(perfData.average),
+          bestSubject: perfData.bestSubject
+        };
+      })
+      .sort((a, b) => b.average - a.average) // Sort by average (highest first)
+      .slice(0, 10); // Top 10 performers
+    
+    // Build the performance analytics response
+    const performanceAnalytics = {
+      gradeDistribution: {
+        labels: gradeDistribution.labels,
+        data: gradeDistribution.data
+      },
+      subjectPerformance: subjectPerformance,
+      performanceAttendance: performanceAttendanceCorrelation,
+      topPerformers: topPerformers
+    };
+    
+    res.status(200).json({ success: true, performanceAnalytics });
+    
+  } catch (err) {
+    logger.error('Error generating performance analytics:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Helper function to calculate attendance distribution
+function calculateAttendanceDistribution(studentAttendance) {
+  const distribution = [0, 0, 0, 0, 0]; // [90-100%, 80-89%, 70-79%, 60-69%, <60%]
+  
+  Object.values(studentAttendance).forEach(data => {
+    if (data.total > 0) {
+      const rate = data.rate;
+      
+      if (rate >= 90) distribution[0]++;
+      else if (rate >= 80) distribution[1]++;
+      else if (rate >= 70) distribution[2]++;
+      else if (rate >= 60) distribution[3]++;
+      else distribution[4]++;
+    }
+  });
+  
+  return distribution;
+}
+
+// Helper function to calculate grade distribution
+function calculateGradeDistribution(scores) {
+  const distribution = [0, 0, 0, 0, 0]; // [A, B, C, D, F]
+  
+  scores.forEach(score => {
+    const percentage = score * 100;
+    
+    if (percentage >= 90) distribution[0]++;
+    else if (percentage >= 80) distribution[1]++;
+    else if (percentage >= 70) distribution[2]++;
+    else if (percentage >= 60) distribution[3]++;
+    else distribution[4]++;
+  });
+  
+  return {
+    labels: ['A', 'B', 'C', 'D', 'F'],
+    data: distribution
+  };
+}

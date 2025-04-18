@@ -19,11 +19,128 @@ function initAnalytics() {
     // Setup comparison controls
     setupComparisonControls();
 
-    // Load and display sample data
-    loadSampleData();
+    // Create error message container if needed
+    createErrorContainer();
 
-    // Initialize all charts
+    // Load and display real data instead of sample data
+    loadAnalyticsData();
+
+    // Initialize all charts with empty data first
     initCharts();
+}
+
+/**
+ * Create error message container
+ */
+function createErrorContainer() {
+    if (!document.getElementById('analytics-error')) {
+        const container = document.querySelector('.analytics-container');
+        if (container) {
+            const errorDiv = document.createElement('div');
+            errorDiv.id = 'analytics-error';
+            errorDiv.className = 'error-message';
+            errorDiv.style.cssText = `
+                background-color: rgba(244, 67, 54, 0.1);
+                border-left: 4px solid #f44336;
+                color: #f44336;
+                padding: 10px 15px;
+                margin-bottom: 20px;
+                border-radius: 4px;
+                display: none;
+            `;
+            
+            // Insert at the top of the container
+            container.insertBefore(errorDiv, container.firstChild);
+        }
+    }
+}
+
+/**
+ * Load analytics data from the server
+ */
+function loadAnalyticsData(filters = null) {
+    // Show loading state
+    showLoadingState();
+    
+    // Default filters if none provided
+    const defaultFilters = {
+        scope: 'all',
+        timePeriod: 'current-semester'
+    };
+    
+    // Use provided filters or defaults
+    const appliedFilters = filters || defaultFilters;
+    
+    // Convert filters to query string
+    const queryParams = new URLSearchParams();
+    Object.keys(appliedFilters).forEach(key => {
+        if (appliedFilters[key] !== null && appliedFilters[key] !== undefined) {
+            queryParams.append(key, appliedFilters[key]);
+        }
+    });
+    
+    // Fetch summary data
+    fetch(`/analytics/summary?${queryParams.toString()}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                // Update summary statistics
+                updateSummaryStats(data.summary);
+                
+                // Fetch attendance data
+                return fetch(`/analytics/attendance?${queryParams.toString()}`);
+            } else {
+                throw new Error(data.error || 'Failed to load summary data');
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                // Update attendance data
+                updateAttendanceData(data.attendanceAnalytics);
+                
+                // Fetch performance data
+                return fetch(`/analytics/performance?${queryParams.toString()}`);
+            } else {
+                throw new Error(data.error || 'Failed to load attendance data');
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                // Update performance data
+                updatePerformanceData(data.performanceAnalytics);
+            } else {
+                throw new Error(data.error || 'Failed to load performance data');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading analytics data:', error);
+            // Show error message to user
+            displayErrorMessage('Failed to load analytics data. Please try again later.');
+            
+            // If error occurs, load sample data so the dashboard isn't empty
+            loadSampleData();
+        })
+        .finally(() => {
+            // Hide loading indicator
+            hideLoadingState();
+        });
 }
 
 /**
@@ -191,23 +308,65 @@ function getAppliedFilters() {
  * Update analytics dashboard based on applied filters
  */
 function updateAnalyticsByFilters(filters) {
-    console.log('Applying filters:', filters);
-    
-    // In a real implementation, this would fetch data from the server
-    // For now, we'll just simulate a delay and update with sample data
-    
     // Show loading indicator
     showLoadingState();
     
-    // Simulate server request delay
-    setTimeout(() => {
-        // Update all charts and stats with new "filtered" data
-        loadSampleData(filters);
-        updateCharts(filters);
-        
-        // Hide loading indicator
-        hideLoadingState();
-    }, 800);
+    // Convert filters to query parameters
+    const queryParams = new URLSearchParams();
+    Object.keys(filters).forEach(key => {
+        if (filters[key] !== null && filters[key] !== undefined) {
+            queryParams.append(key, filters[key]);
+        }
+    });
+    
+    // Fetch summary data
+    fetch(`/analytics/summary?${queryParams.toString()}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                // Update summary statistics
+                updateSummaryStats(data.summary);
+                
+                // Now fetch attendance data
+                return fetch(`/analytics/attendance?${queryParams.toString()}`);
+            } else {
+                throw new Error(data.error || 'Failed to load summary data');
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Update attendance data
+                updateAttendanceData(data.attendanceAnalytics);
+                
+                // Now fetch performance data
+                return fetch(`/analytics/performance?${queryParams.toString()}`);
+            } else {
+                throw new Error(data.error || 'Failed to load attendance data');
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Update performance data
+                updatePerformanceData(data.performanceAnalytics);
+            } else {
+                throw new Error(data.error || 'Failed to load performance data');
+            }
+        })
+        .catch(error => {
+            console.error('Error updating analytics:', error);
+            displayErrorMessage('Failed to load analytics data. Please try again later.');
+        })
+        .finally(() => {
+            // Hide loading indicator
+            hideLoadingState();
+        });
 }
 
 /**
@@ -1257,4 +1416,203 @@ function generateRandomData(count, metricType) {
     }
     
     return data;
+}
+
+/**
+ * Update summary statistics cards
+ */
+function updateSummaryStats(summary) {
+    // Update student stats
+    updateStatCard('total-students', summary.students.total);
+    updateStatCard('active-students', summary.students.active);
+    updateStatCard('new-enrollments', summary.students.newEnrollments);
+    
+    // Update attendance rate
+    updateStatCard('attendance-rate', summary.attendance.rate, '%', summary.attendance.comparison);
+    
+    // Update exam scores
+    updateStatCard('avg-score', summary.performance.averageScore, '%', summary.performance.comparison);
+    
+    // Update homework completion
+    updateStatCard('homework-completion', summary.homework.completionRate, '%', summary.homework.comparison);
+}
+
+/**
+ * Update stat card with real data
+ */
+function updateStatCard(id, value, suffix = '', comparison = null) {
+    const statElement = document.getElementById(id);
+    if (!statElement) return;
+    
+    // Update main value
+    const valueElement = statElement.querySelector('.stat-value');
+    if (valueElement) {
+        valueElement.textContent = `${value}${suffix}`;
+    }
+    
+    // Update comparison indicator if it exists
+    const comparisonElement = statElement.querySelector('.comparison');
+    if (comparisonElement && comparison !== null) {
+        const isPositive = comparison > 0;
+        const icon = isPositive ? '↑' : '↓';
+        const colorClass = isPositive ? 'positive' : 'negative';
+        
+        comparisonElement.innerHTML = `<span class="${colorClass}">${icon} ${Math.abs(comparison)}${suffix}</span>`;
+    }
+}
+
+/**
+ * Update attendance data in charts and tables
+ */
+function updateAttendanceData(data) {
+    // Update attendance pattern chart (attendance over time)
+    if (window.attendancePatternChart && data.patterns) {
+        window.attendancePatternChart.data.labels = data.patterns.labels;
+        window.attendancePatternChart.data.datasets[0].data = data.patterns.data;
+        window.attendancePatternChart.update();
+    }
+    
+    // Update attendance by day chart
+    if (window.attendanceByDayChart && data.byDay) {
+        window.attendanceByDayChart.data.labels = data.byDay.labels;
+        window.attendanceByDayChart.data.datasets[0].data = data.byDay.data;
+        window.attendanceByDayChart.update();
+    }
+    
+    // Update attendance distribution chart
+    if (window.attendanceDistributionChart && data.distribution) {
+        window.attendanceDistributionChart.data.labels = data.distribution.labels;
+        window.attendanceDistributionChart.data.datasets[0].data = data.distribution.data;
+        window.attendanceDistributionChart.update();
+    }
+    
+    // Update low attendance students table
+    updateLowAttendanceTable(data.lowAttendanceStudents || []);
+}
+
+/**
+ * Update low attendance students table
+ */
+function updateLowAttendanceTable(students) {
+    const tableBody = document.querySelector('#attendance-issues-table tbody');
+    if (!tableBody) return;
+    
+    // Build the table rows
+    let tableHTML = '';
+    
+    if (students.length === 0) {
+        tableHTML = '<tr><td colspan="5" class="text-center">No data available</td></tr>';
+    } else {
+        students.forEach(student => {
+            tableHTML += `
+                <tr>
+                    <td>${student.name}</td>
+                    <td>${student.class}</td>
+                    <td>${student.rate}%</td>
+                    <td>${student.missed}</td>
+                    <td>${student.pattern}</td>
+                </tr>
+            `;
+        });
+    }
+    
+    tableBody.innerHTML = tableHTML;
+}
+
+/**
+ * Update performance data in charts and tables
+ */
+function updatePerformanceData(data) {
+    // Update grade distribution chart
+    if (window.gradeDistributionChart && data.gradeDistribution) {
+        window.gradeDistributionChart.data.labels = data.gradeDistribution.labels;
+        window.gradeDistributionChart.data.datasets[0].data = data.gradeDistribution.data;
+        window.gradeDistributionChart.update();
+    }
+    
+    // Update subject performance chart
+    if (window.subjectPerformanceChart && data.subjectPerformance) {
+        window.subjectPerformanceChart.data.labels = data.subjectPerformance.labels;
+        window.subjectPerformanceChart.data.datasets[0].data = data.subjectPerformance.data;
+        window.subjectPerformanceChart.update();
+    }
+    
+    // Update performance vs attendance scatter chart
+    if (window.performanceAttendanceChart && data.performanceAttendance) {
+        window.performanceAttendanceChart.data.datasets[0].data = data.performanceAttendance;
+        window.performanceAttendanceChart.update();
+    }
+    
+    // Update top performers table
+    updateTopPerformersTable(data.topPerformers || []);
+}
+
+/**
+ * Update top performers table
+ */
+function updateTopPerformersTable(performers) {
+    const tableBody = document.querySelector('#top-performers-table tbody');
+    if (!tableBody) return;
+    
+    // Build the table rows
+    let tableHTML = '';
+    
+    if (performers.length === 0) {
+        tableHTML = '<tr><td colspan="4" class="text-center">No data available</td></tr>';
+    } else {
+        performers.forEach(student => {
+            tableHTML += `
+                <tr>
+                    <td>${student.name}</td>
+                    <td>${student.class}</td>
+                    <td>${student.average}%</td>
+                    <td>${student.bestSubject}</td>
+                </tr>
+            `;
+        });
+    }
+    
+    tableBody.innerHTML = tableHTML;
+}
+
+/**
+ * Display error message
+ */
+function displayErrorMessage(message) {
+    const errorContainer = document.getElementById('analytics-error');
+    if (errorContainer) {
+        errorContainer.textContent = message;
+        errorContainer.style.display = 'block';
+        
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+            errorContainer.style.display = 'none';
+        }, 5000);
+    } else {
+        // Create error container if it doesn't exist
+        const container = document.querySelector('.analytics-container');
+        if (container) {
+            const errorDiv = document.createElement('div');
+            errorDiv.id = 'analytics-error';
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = message;
+            errorDiv.style.cssText = `
+                background-color: rgba(244, 67, 54, 0.1);
+                border-left: 4px solid #f44336;
+                color: #f44336;
+                padding: 10px 15px;
+                margin-bottom: 20px;
+                border-radius: 4px;
+                display: block;
+            `;
+            
+            // Insert at the top of the container
+            container.insertBefore(errorDiv, container.firstChild);
+            
+            // Auto-hide
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+    }
 }
