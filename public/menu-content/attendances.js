@@ -1481,11 +1481,11 @@
     
     // Generate unique IDs for new records
     function generateAttendanceId() {
-        return 'ATT' + Date.now().toString() + Math.floor(Math.random() * 1000);
+        return DataUtils.IdGenerator.attendance();
     }
-    
+
     function generateHomeworkId() {
-        return 'HW' + Date.now().toString() + Math.floor(Math.random() * 1000);
+        return DataUtils.IdGenerator.homework();
     }
     
     // Add CSS for processing indicators

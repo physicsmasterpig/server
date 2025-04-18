@@ -103,6 +103,63 @@ const DataUtils = {
     }
 };
 
+/**
+ * Simplified ID Generator for BrainDB
+ * Uses a simple incrementing counter with prefixes and saves the last used ID in memory
+ */
+DataUtils.IdGenerator = (function() {
+    // Keep track of the last used ID for each prefix
+    const lastIds = {
+        S: 0,      // Student
+        C: 0,      // Class
+        L: 0,      // Lecture
+        AT: 0,     // Attendance
+        HW: 0,     // Homework
+        E: 0,      // Exam
+        P: 0,      // Problem
+        EP: 0,     // Exam-Problem
+        SC: 0,     // Score
+        EN: 0      // Enrollment
+    };
+    
+    /**
+     * Generate an 8-digit ID with prefix
+     * @param {string} prefix - The prefix for the ID
+     * @returns {string} A unique ID string with format PREFIX + 00000001
+     */
+    function generateId(prefix) {
+        // Increment the counter for this prefix
+        lastIds[prefix] = (lastIds[prefix] || 0) + 1;
+        
+        // Format to 8 digits with leading zeros
+        const formattedNumber = String(lastIds[prefix]).padStart(8, '0');
+        
+        // Return prefixed ID
+        return `${prefix}${formattedNumber}`;
+    }
+    
+    return {
+        generate: generateId,
+        
+        // Convenience methods for each entity type
+        student: () => generateId('S'),
+        class: () => generateId('C'),
+        lecture: () => generateId('L'),
+        attendance: () => generateId('AT'),
+        homework: () => generateId('HW'),
+        exam: () => generateId('E'),
+        problem: () => generateId('P'),
+        examProblem: () => generateId('EP'),
+        score: () => generateId('SC'),
+        enrollment: () => generateId('EN')
+    };
+})();
+
+// Legacy support for the previous generateUniqueId function
+DataUtils.generateUniqueId = function(prefix) {
+    return DataUtils.IdGenerator.generate(prefix);
+};
+
 // Constants for API operations
 const API_CONSTANTS = {
     RETRY: {
