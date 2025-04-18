@@ -17,6 +17,13 @@
         NEEDS_IMPROVEMENT: 'needs_improvement',
         INCOMPLETE: 'incomplete'
     };
+
+    // API constants for retry logic
+    const API_RETRY = {
+        MAX_RETRIES: 5,
+        INITIAL_RETRY_DELAY: 1000, // 1 second
+        MAX_RETRY_DELAY: 60000     // 1 minute
+    };
     
     // DOM Element References
     const elements = {
@@ -1103,14 +1110,14 @@
             
             console.log('Saving data to server:', dataToSend);
             
-            // Send the data to the server
-            const response = await fetch('/save-attendance-homework', {
+            // Send the data to the server with retry logic
+            const response = await sendRequestWithRetry('/save-attendance-homework', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(dataToSend)
-            });
+            }, API_RETRY.MAX_RETRIES, API_RETRY.INITIAL_RETRY_DELAY, API_RETRY.MAX_RETRY_DELAY);
             
             if (!response.ok) {
                 throw new Error(`Server responded with status: ${response.status}`);
@@ -1189,6 +1196,73 @@
         } finally {
             await window.appUtils.hideLoadingIndicator();
         }
+    }
+    
+    // Helper function to send requests with retry logic
+    async function sendRequestWithRetry(url, options, maxRetries, initialDelay, maxDelay) {
+        let retries = 0;
+        let delay = initialDelay;
+        
+        while (true) {
+            try {
+                const response = await fetch(url, options);
+                
+                // If we got a quota exceeded error from the server
+                if (response.status === 429 || (response.status === 500 && await containsQuotaError(response))) {
+                    if (retries >= maxRetries) {
+                        throw new Error(`Maximum retries (${maxRetries}) exceeded for API quota limits`);
+                    }
+                    
+                    console.log(`API quota exceeded. Retrying in ${delay}ms (attempt ${retries + 1}/${maxRetries})`);
+                    
+                    // Wait for the delay period
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    
+                    // Increase retries and apply exponential backoff
+                    retries++;
+                    delay = Math.min(delay * 2, maxDelay);
+                    continue;
+                }
+                
+                return response;
+            } catch (error) {
+                if (retries >= maxRetries || !isQuotaError(error)) {
+                    throw error;
+                }
+                
+                console.log(`API error. Retrying in ${delay}ms (attempt ${retries + 1}/${maxRetries})`);
+                
+                // Wait for the delay period
+                await new Promise(resolve => setTimeout(resolve, delay));
+                
+                // Increase retries and apply exponential backoff
+                retries++;
+                delay = Math.min(delay * 2, maxDelay);
+            }
+        }
+    }
+    
+    // Check if the error response contains quota exceeded error
+    async function containsQuotaError(response) {
+        try {
+            const clonedResponse = response.clone();
+            const json = await clonedResponse.json();
+            return json && json.error && (
+                json.error.includes('Quota exceeded') ||
+                json.error.includes('Rate limit exceeded')
+            );
+        } catch (e) {
+            return false;
+        }
+    }
+    
+    // Check if an error object is a quota error
+    function isQuotaError(error) {
+        return error && error.message && (
+            error.message.includes('Quota exceeded') ||
+            error.message.includes('Rate limit exceeded') ||
+            error.message.includes('User rate limit exceeded')
+        );
     }
     
     // Update statistics for the page

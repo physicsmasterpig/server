@@ -701,7 +701,7 @@ app.post('/save-attendance-homework', async (req, res) => {
             }
         }
 
-        // Perform batch updates for attendance
+        // Perform batch updates for attendance with retry
         if (attendanceUpdates.length > 0) {
             for (const update of attendanceUpdates) {
                 if (isNaN(update.rowIndex)) {
@@ -710,24 +710,28 @@ app.post('/save-attendance-homework', async (req, res) => {
                 }
 
                 const sheetRow = update.rowIndex + 2; // Account for header row
-                await sheets.spreadsheets.values.update({
-                    spreadsheetId,
-                    range: `attendance!D${sheetRow}:D${sheetRow}`,
-                    valueInputOption: 'USER_ENTERED',
-                    resource: {
-                        values: [[update.status]]
-                    }
+                await retryWithBackoff(async () => {
+                    return sheets.spreadsheets.values.update({
+                        spreadsheetId,
+                        range: `attendance!D${sheetRow}:D${sheetRow}`,
+                        valueInputOption: 'USER_ENTERED',
+                        resource: {
+                            values: [[update.status]]
+                        }
+                    });
                 });
             }
         }
 
-        // Perform batch inserts for attendance
+        // Perform batch inserts for attendance with retry
         if (attendanceInserts.length > 0) {
-            await sheets.spreadsheets.values.append({
-                spreadsheetId,
-                range: sheetsRange.attendance,
-                valueInputOption: 'USER_ENTERED',
-                resource: { values: attendanceInserts }
+            await retryWithBackoff(async () => {
+                return sheets.spreadsheets.values.append({
+                    spreadsheetId,
+                    range: sheetsRange.attendance,
+                    valueInputOption: 'USER_ENTERED',
+                    resource: { values: attendanceInserts }
+                });
             });
         }
 
@@ -761,33 +765,37 @@ app.post('/save-attendance-homework', async (req, res) => {
             }
         }
 
-        // Perform batch updates for homework
+        // Perform batch updates for homework with retry
         if (homeworkUpdates.length > 0) {
             for (const update of homeworkUpdates) {
                 const sheetRow = update.rowIndex + 2; // Account for header row
-                await sheets.spreadsheets.values.update({
-                    spreadsheetId,
-                    range: `homework!C${sheetRow}:G${sheetRow}`,
-                    valueInputOption: 'USER_ENTERED',
-                    resource: {
-                        values: [[
-                            update.data.total_problems,
-                            update.data.completed_problems,
-                            update.data.classification,
-                            update.data.comments
-                        ]]
-                    }
+                await retryWithBackoff(async () => {
+                    return sheets.spreadsheets.values.update({
+                        spreadsheetId,
+                        range: `homework!C${sheetRow}:G${sheetRow}`,
+                        valueInputOption: 'USER_ENTERED',
+                        resource: {
+                            values: [[
+                                update.data.total_problems,
+                                update.data.completed_problems,
+                                update.data.classification,
+                                update.data.comments
+                            ]]
+                        }
+                    });
                 });
             }
         }
 
-        // Perform batch inserts for homework
+        // Perform batch inserts for homework with retry
         if (homeworkInserts.length > 0) {
-            await sheets.spreadsheets.values.append({
-                spreadsheetId,
-                range: sheetsRange.homework,
-                valueInputOption: 'USER_ENTERED',
-                resource: { values: homeworkInserts }
+            await retryWithBackoff(async () => {
+                return sheets.spreadsheets.values.append({
+                    spreadsheetId,
+                    range: sheetsRange.homework,
+                    valueInputOption: 'USER_ENTERED',
+                    resource: { values: homeworkInserts }
+                });
             });
         }
 
@@ -1302,5 +1310,40 @@ async function batchUpdateSheetData(batchRequests) {
   } catch (error) {
     logger.error('Error in batch update:', error);
     throw error;
+  }
+}
+
+// Utility functions for API requests
+// Retry function with exponential backoff for handling rate limits
+async function retryWithBackoff(operation, maxRetries = 5, initialDelay = 1000, maxDelay = 60000) {
+  let retries = 0;
+  let delay = initialDelay;
+  
+  while (true) {
+    try {
+      return await operation();
+    } catch (error) {
+      // Check if this is a quota exceeded error
+      const isQuotaError = error.message && (
+        error.message.includes('Quota exceeded') ||
+        error.message.includes('Rate limit exceeded') ||
+        error.message.includes('User rate limit exceeded')
+      );
+      
+      // If we've reached max retries or it's not a quota error, throw the error
+      if (retries >= maxRetries || !isQuotaError) {
+        throw error;
+      }
+      
+      // Log the retry attempt
+      logger.info(`API quota exceeded. Retrying in ${delay}ms (attempt ${retries + 1}/${maxRetries})`);
+      
+      // Wait for the delay period
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      // Increase retries and apply exponential backoff with jitter
+      retries++;
+      delay = Math.min(delay * 2 * (0.9 + Math.random() * 0.2), maxDelay);
+    }
   }
 }
