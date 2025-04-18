@@ -10,6 +10,7 @@ const winston = require('winston'); // For structured logging
 const NodeCache = require('node-cache');
 const { promisify } = require('util');
 const sleep = promisify(setTimeout);
+const { DataUtils, API_CONSTANTS, CacheManager } = require('./public/utils');
 
 // Add structured logging with winston
 const logger = winston.createLogger({
@@ -101,29 +102,53 @@ async function initializeGoogleAPIs() {
 }
 
 // Cache configuration
-const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 }); // Cache for 5 minutes
+const dataCache = CacheManager;
+const CACHE_TTL = 300; // 5 minutes
 const RATE_LIMIT_DELAY = 100; // 100ms base delay
 
 // Helper function for exponential backoff
-async function retryWithBackoff(fn, retries = 5, baseDelay = RATE_LIMIT_DELAY, factor = 2) {
-  try {
-    return await fn();
-  } catch (err) {
-    if (retries === 0 || err.code !== 429) {
-      throw err;
+async function retryWithBackoff(operation, maxRetries = API_CONSTANTS.RETRY.MAX_RETRIES, 
+                               initialDelay = API_CONSTANTS.RETRY.INITIAL_DELAY, 
+                               maxDelay = API_CONSTANTS.RETRY.MAX_DELAY) {
+  let retries = 0;
+  let delay = initialDelay;
+  
+  while (true) {
+    try {
+      return await operation();
+    } catch (error) {
+      // Check if this is a quota exceeded error or rate limit
+      const isQuotaError = error.message && (
+        error.message.includes('Quota exceeded') ||
+        error.message.includes('Rate limit exceeded') ||
+        error.message.includes('User rate limit exceeded') ||
+        error.code === 429
+      );
+      
+      // If we've reached max retries or it's not a quota error, throw the error
+      if (retries >= maxRetries || !isQuotaError) {
+        throw error;
+      }
+      
+      // Log the retry attempt
+      logger.info(`API quota exceeded. Retrying in ${delay}ms (attempt ${retries + 1}/${maxRetries})`);
+      
+      // Wait for the delay period
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      // Increase retries and apply exponential backoff with jitter
+      retries++;
+      const jitter = 1 - API_CONSTANTS.RETRY.JITTER_FACTOR + 
+                     Math.random() * API_CONSTANTS.RETRY.JITTER_FACTOR * 2;
+      delay = Math.min(delay * 2 * jitter, maxDelay);
     }
-    
-    const delay = baseDelay * Math.pow(factor, 5 - retries);
-    logger.info(`Rate limit hit, retrying after ${delay}ms...`);
-    await sleep(delay);
-    return retryWithBackoff(fn, retries - 1, baseDelay, factor);
   }
 }
 
 // Cached sheet data fetcher with retry
 async function fetchSheetData(sheetRange) {
   const cacheKey = `sheet-${sheetRange}`;
-  const cachedData = cache.get(cacheKey);
+  const cachedData = dataCache.get(cacheKey);
   
   if (cachedData) {
     return cachedData;
@@ -137,8 +162,105 @@ async function fetchSheetData(sheetRange) {
   });
   
   const data = result.data.values || [];
-  cache.set(cacheKey, data);
+  dataCache.set(cacheKey, data, CACHE_TTL);
   return data;
+}
+
+// Add a new batch operation function for Google Sheets
+async function batchSheetOperation(operations) {
+  if (operations.length === 0) return [];
+  
+  // Split operations into batches to avoid API limits
+  const batchSize = API_CONSTANTS.BATCH_SIZE.UPDATES;
+  const batches = [];
+  
+  for (let i = 0; i < operations.length; i += batchSize) {
+    batches.push(operations.slice(i, i + batchSize));
+  }
+  
+  const results = [];
+  
+  for (const batch of batches) {
+    // Create a batch request
+    const batchRequest = {
+      spreadsheetId,
+      resource: {
+        data: batch.map(op => ({
+          range: op.range,
+          values: op.values,
+        })),
+        valueInputOption: 'USER_ENTERED'
+      }
+    };
+    
+    // Execute the batch request with retry logic
+    const result = await retryWithBackoff(async () => {
+      return await sheets.spreadsheets.values.batchUpdate(batchRequest);
+    });
+    
+    results.push(result);
+    
+    // Small delay to avoid hitting rate limits
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  
+  return results;
+}
+
+// Replace the findAttendanceRecord function with a more efficient version
+async function findAttendanceRecord(lectureId, studentId) {
+  try {
+    const rows = await fetchSheetData(sheetsRange.attendance);
+    
+    // Use a composite key approach for faster lookups in memory
+    const key = `${lectureId}|${studentId}`;
+    const lookupMap = dataCache.get('attendance-lookup');
+    
+    if (lookupMap && lookupMap.has(key)) {
+      return lookupMap.get(key);
+    }
+    
+    // If not in cache, rebuild the lookup map
+    const newMap = new Map();
+    rows.forEach((row, index) => {
+      const rowKey = `${row[1]}|${row[2]}`; // lectureId|studentId
+      newMap.set(rowKey, { rowIndex: index, row });
+    });
+    
+    dataCache.set('attendance-lookup', newMap, CACHE_TTL);
+    return newMap.get(key) || null;
+  } catch (error) {
+    logger.error(`Error finding attendance record:`, error);
+    throw error;
+  }
+}
+
+// Replace the findHomeworkRecord function with a more efficient version
+async function findHomeworkRecord(lectureId, studentId) {
+  try {
+    const rows = await fetchSheetData(sheetsRange.homework);
+    
+    // Use a composite key approach for faster lookups in memory
+    const key = `${lectureId}|${studentId}`;
+    const lookupMap = dataCache.get('homework-lookup');
+    
+    if (lookupMap && lookupMap.has(key)) {
+      return lookupMap.get(key);
+    }
+    
+    // If not in cache, rebuild the lookup map
+    const newMap = new Map();
+    rows.forEach((row, index) => {
+      const rowKey = `${row[1]}|${row[2]}`; // lectureId|studentId
+      newMap.set(rowKey, { rowIndex: index, row });
+    });
+    
+    dataCache.set('homework-lookup', newMap, CACHE_TTL);
+    return newMap.get(key) || null;
+  } catch (error) {
+    logger.error(`Error finding homework record:`, error);
+    throw error;
+  }
 }
 
 // Delay server startup until Google APIs are initialized
@@ -679,51 +801,42 @@ app.post('/save-attendance-homework', async (req, res) => {
             return res.status(404).json({ error: 'Lecture not found' });
         }
 
-        // Batch process attendance records
+        // Invalidate relevant caches to ensure fresh data
+        dataCache.remove('sheet-' + sheetsRange.attendance);
+        dataCache.remove('sheet-' + sheetsRange.homework);
+        dataCache.remove('attendance-lookup');
+        dataCache.remove('homework-lookup');
+
+        // Prepare batch operations for attendance updates
         const attendanceUpdates = [];
         const attendanceInserts = [];
 
-        for (const record of attendance_data) {
+        // Process attendance data in parallel using Promise.all
+        await Promise.all(attendance_data.map(async record => {
             const existingRecord = await findAttendanceRecord(record.lecture_id, record.student_id);
 
             if (existingRecord) {
+                const sheetRow = existingRecord.rowIndex + 2; // Account for header row
                 attendanceUpdates.push({
-                    rowIndex: existingRecord.rowIndex,
-                    status: record.status
+                    range: `attendance!D${sheetRow}:D${sheetRow}`,
+                    values: [[record.status]]
                 });
             } else {
                 attendanceInserts.push([
-                    record.attendance_id || `AT${Date.now()}${Math.floor(Math.random() * 1000)}`,
+                    record.attendance_id || DataUtils.generateUniqueId('AT'),
                     record.lecture_id,
                     record.student_id,
                     record.status
                 ]);
             }
-        }
+        }));
 
-        // Perform batch updates for attendance with retry
+        // Execute attendance updates in batch
         if (attendanceUpdates.length > 0) {
-            for (const update of attendanceUpdates) {
-                if (isNaN(update.rowIndex)) {
-                    logger.error(`Invalid rowIndex for attendance update:`, update);
-                    continue; // Skip invalid updates
-                }
-
-                const sheetRow = update.rowIndex + 2; // Account for header row
-                await retryWithBackoff(async () => {
-                    return sheets.spreadsheets.values.update({
-                        spreadsheetId,
-                        range: `attendance!D${sheetRow}:D${sheetRow}`,
-                        valueInputOption: 'USER_ENTERED',
-                        resource: {
-                            values: [[update.status]]
-                        }
-                    });
-                });
-            }
+            await batchSheetOperation(attendanceUpdates);
         }
 
-        // Perform batch inserts for attendance with retry
+        // Execute attendance inserts
         if (attendanceInserts.length > 0) {
             await retryWithBackoff(async () => {
                 return sheets.spreadsheets.values.append({
@@ -735,59 +848,46 @@ app.post('/save-attendance-homework', async (req, res) => {
             });
         }
 
-        // Batch process homework records
+        // Prepare batch operations for homework updates
         const homeworkUpdates = [];
         const homeworkInserts = [];
 
-        for (const record of homework_data) {
+        // Process homework data in parallel using Promise.all
+        await Promise.all(homework_data.map(async record => {
             const existingRecord = await findHomeworkRecord(record.lecture_id, record.student_id);
 
             if (existingRecord) {
+                const sheetRow = existingRecord.rowIndex + 2; // Account for header row
                 homeworkUpdates.push({
-                    rowIndex: existingRecord.rowIndex,
-                    data: {
-                        total_problems: record.total_problems,
-                        completed_problems: record.completed_problems,
-                        classification: record.classification,
-                        comments: record.comments
-                    }
+                    range: `homework!C${sheetRow}:G${sheetRow}`,
+                    values: [[
+                        record.total_problems,
+                        record.completed_problems,
+                        record.classification,
+                        record.comments,
+                        new Date().toISOString() // Add last updated timestamp
+                    ]]
                 });
             } else {
                 homeworkInserts.push([
-                    record.homework_id || `HW${Date.now()}${Math.floor(Math.random() * 1000)}`,
+                    record.homework_id || DataUtils.generateUniqueId('HW'),
                     record.lecture_id,
                     record.student_id,
                     record.total_problems,
                     record.completed_problems,
                     record.classification,
-                    record.comments
+                    record.comments,
+                    new Date().toISOString() // Add creation timestamp
                 ]);
             }
-        }
+        }));
 
-        // Perform batch updates for homework with retry
+        // Execute homework updates in batch
         if (homeworkUpdates.length > 0) {
-            for (const update of homeworkUpdates) {
-                const sheetRow = update.rowIndex + 2; // Account for header row
-                await retryWithBackoff(async () => {
-                    return sheets.spreadsheets.values.update({
-                        spreadsheetId,
-                        range: `homework!C${sheetRow}:G${sheetRow}`,
-                        valueInputOption: 'USER_ENTERED',
-                        resource: {
-                            values: [[
-                                update.data.total_problems,
-                                update.data.completed_problems,
-                                update.data.classification,
-                                update.data.comments
-                            ]]
-                        }
-                    });
-                });
-            }
+            await batchSheetOperation(homeworkUpdates);
         }
 
-        // Perform batch inserts for homework with retry
+        // Execute homework inserts
         if (homeworkInserts.length > 0) {
             await retryWithBackoff(async () => {
                 return sheets.spreadsheets.values.append({
@@ -1296,17 +1396,13 @@ app.post('/save-exam-scores', async (req, res) => {
 // Batch update sheet data with retries
 async function batchUpdateSheetData(batchRequests) {
   try {
-    for (const request of batchRequests) {
-      await retryWithBackoff(async () => {
-        return sheets.spreadsheets.values.append({
-          spreadsheetId,
-          range: request.range,
-          valueInputOption: 'USER_ENTERED',
-          resource: { values: request.values }
-        });
-      });
-    }
-    return true;
+    // Convert batch requests to the format expected by batchSheetOperation
+    const operations = batchRequests.map(request => ({
+      range: request.range,
+      values: request.values
+    }));
+    
+    return await batchSheetOperation(operations);
   } catch (error) {
     logger.error('Error in batch update:', error);
     throw error;
