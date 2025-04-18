@@ -1,5 +1,6 @@
 # Ignore credentials and sensitive files
 credential.json
+cloudtype.json
 
 # Logs
 *.log
