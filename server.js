@@ -263,13 +263,6 @@ async function findHomeworkRecord(lectureId, studentId) {
   }
 }
 
-// Delay server startup until Google APIs are initialized
-initializeGoogleAPIs().then(() => {
-  app.listen(PORT, () => {
-    logger.info(`Server is running at http://localhost:${PORT}`);
-  });
-});
-
 // Move sensitive data to environment variables
 const spreadsheetId = process.env.SPREADSHEET_ID || "1NbcwKdFAwm0RRw5JIpaOMtCibWM_9gsUbYCOQ2GUNlI";
 
@@ -1465,3 +1458,96 @@ async function retryWithBackoff(operation, maxRetries = 5, initialDelay = 1000, 
     }
   }
 }
+
+// Initialize ID generator with highest existing IDs from database
+async function initializeIdGenerator() {
+  try {
+    logger.info('Initializing ID generator from database...');
+    
+    // Fetch all sheets data in parallel to find highest IDs
+    const [
+      studentRows, 
+      classRows, 
+      lectureRows, 
+      attendanceRows, 
+      homeworkRows, 
+      examRows, 
+      problemRows, 
+      examProblemRows, 
+      scoreRows,
+      enrollmentRows
+    ] = await Promise.all([
+      fetchSheetData(sheetsRange.student),
+      fetchSheetData(sheetsRange.class),
+      fetchSheetData(sheetsRange.lecture),
+      fetchSheetData(sheetsRange.attendance),
+      fetchSheetData(sheetsRange.homework),
+      fetchSheetData(sheetsRange.exam),
+      fetchSheetData(sheetsRange.problem),
+      fetchSheetData(sheetsRange.exam_problem),
+      fetchSheetData(sheetsRange.score),
+      fetchSheetData(sheetsRange.enrollment)
+    ]);
+    
+    // Extract highest ID numbers for each prefix
+    const maxIds = {
+      S: findHighestIdNumber(studentRows, 'S'),
+      C: findHighestIdNumber(classRows, 'C'),
+      L: findHighestIdNumber(lectureRows, 'L'),
+      AT: findHighestIdNumber(attendanceRows, 'AT'),
+      HW: findHighestIdNumber(homeworkRows, 'HW'),
+      E: findHighestIdNumber(examRows, 'E'),
+      P: findHighestIdNumber(problemRows, 'P'),
+      EP: findHighestIdNumber(examProblemRows, 'EP'),
+      SC: findHighestIdNumber(scoreRows, 'SC'),
+      EN: findHighestIdNumber(enrollmentRows, 'EN')
+    };
+    
+    // Initialize the ID generator with the highest IDs
+    DataUtils.IdGenerator.initializeFromDb(maxIds);
+    
+    logger.info('ID generator initialized successfully', { maxIds });
+  } catch (error) {
+    logger.error('Error initializing ID generator:', error);
+  }
+}
+
+// Helper function to find the highest ID number for a given prefix
+function findHighestIdNumber(rows, prefix) {
+  let highestNum = 0;
+  
+  if (!rows || !rows.length) return highestNum;
+  
+  // Extract numeric part from IDs and find highest
+  rows.forEach(row => {
+    if (row && row[0] && row[0].startsWith(prefix)) {
+      const numPart = row[0].substring(prefix.length);
+      const num = parseInt(numPart, 10);
+      if (!isNaN(num) && num > highestNum) {
+        highestNum = num;
+      }
+    }
+  });
+  
+  return highestNum;
+}
+
+// Delay server startup until Google APIs are initialized
+async function initializeServer() {
+  try {
+    await initializeGoogleAPIs();
+    
+    // Initialize ID generator from database after Google APIs are ready
+    await initializeIdGenerator();
+    
+    app.listen(PORT, () => {
+      logger.info(`Server is running at http://localhost:${PORT}`);
+    });
+  } catch (error) {
+    logger.error('Failed to initialize server:', error);
+    process.exit(1);
+  }
+}
+
+// Start the initialization process
+initializeServer();

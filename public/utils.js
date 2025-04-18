@@ -105,7 +105,7 @@ const DataUtils = {
 
 /**
  * Simplified ID Generator for BrainDB
- * Uses a simple incrementing counter with prefixes and saves the last used ID in memory
+ * Uses a simple incrementing counter with prefixes and reads the last used IDs from the database
  */
 DataUtils.IdGenerator = (function() {
     // Keep track of the last used ID for each prefix
@@ -122,12 +122,19 @@ DataUtils.IdGenerator = (function() {
         EN: 0      // Enrollment
     };
     
+    // Flag to track if initialization has occurred
+    let initialized = false;
+    
     /**
      * Generate an 8-digit ID with prefix
      * @param {string} prefix - The prefix for the ID
      * @returns {string} A unique ID string with format PREFIX + 00000001
      */
     function generateId(prefix) {
+        if (!initialized) {
+            console.warn(`IdGenerator not initialized. Using in-memory counter for ${prefix}`);
+        }
+        
         // Increment the counter for this prefix
         lastIds[prefix] = (lastIds[prefix] || 0) + 1;
         
@@ -138,8 +145,27 @@ DataUtils.IdGenerator = (function() {
         return `${prefix}${formattedNumber}`;
     }
     
+    /**
+     * Initialize the ID generator with the last used IDs from the database
+     * @param {Object} maxIds - Object containing the highest ID for each prefix
+     */
+    function initializeFromDb(maxIds) {
+        if (!maxIds) return;
+        
+        Object.keys(lastIds).forEach(prefix => {
+            if (maxIds[prefix] !== undefined && maxIds[prefix] > lastIds[prefix]) {
+                lastIds[prefix] = maxIds[prefix];
+            }
+        });
+        
+        initialized = true;
+        console.log('ID Generator initialized from database');
+    }
+    
     return {
         generate: generateId,
+        initializeFromDb,
+        isInitialized: () => initialized,
         
         // Convenience methods for each entity type
         student: () => generateId('S'),
