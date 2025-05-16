@@ -2,31 +2,1175 @@
 
 // Wait for DOM to be fully loaded
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize the analytics dashboard
-    initAnalytics();
+    // Load Chart.js dynamically with a more reliable approach
+    loadChartJS()
+        .then(() => {
+            console.log('Chart.js loaded successfully');
+            initializeAnalytics();
+        })
+        .catch(err => {
+            console.error('Failed to load Chart.js:', err);
+            displayErrorMessage('Failed to load chart library. Please refresh the page.');
+            // Still try to initialize the UI elements even if Chart.js fails
+            initializeUIElements();
+        });
+
+    // Set up tab navigation
+    setupTabNavigation();
 });
 
 /**
- * Initialize the analytics dashboard
+ * Load Chart.js dynamically
  */
-function initAnalytics() {
-    // Setup tab switching
-    setupTabs();
+function loadChartJS() {
+    return new Promise((resolve, reject) => {
+        if (window.Chart) {
+            console.log('Chart.js already loaded');
+            resolve();
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js';
+        script.integrity = 'sha384-Ba1XOIuZEUoXCXcJ+VS3J0tmGI79uVHJcnLVeI/Kxze9fHMxXx4+l6ZFTxpLnFkq';
+        script.crossOrigin = 'anonymous';
+        script.onload = () => resolve();
+        script.onerror = (err) => reject(err);
+        document.head.appendChild(script);
+        
+        // Add a timeout to reject if loading takes too long
+        setTimeout(() => {
+            if (!window.Chart) {
+                reject(new Error('Chart.js load timeout'));
+            }
+        }, 10000);
+    });
+}
+
+/**
+ * Initialize analytics dashboard
+ */
+function initializeAnalytics() {
+    console.log('Initializing analytics dashboard');
     
-    // Initialize filter controls
-    setupFilterControls();
-
-    // Setup comparison controls
-    setupComparisonControls();
-
-    // Create error message container if needed
+    // Create error container for potential error messages
     createErrorContainer();
+    
+    // Initialize UI elements
+    initializeUIElements();
+    
+    // First initialize empty charts to ensure containers are ready
+    initEmptyCharts();
+    
+    // Load data (first try API, fallback to sample data)
+    fetchAnalyticsData()
+        .then(data => {
+            console.log('Analytics data loaded:', data);
+            updateDashboardWithData(data);
+        })
+        .catch(err => {
+            console.error('Failed to fetch analytics data, using sample data instead:', err);
+            loadSampleData();
+        });
+}
 
-    // Load and display real data instead of sample data
-    loadAnalyticsData();
+/**
+ * Initialize empty chart containers
+ */
+function initEmptyCharts() {
+    console.log('Initializing empty chart containers');
+    if (!window.Chart) {
+        console.error('Chart.js not available for empty chart initialization');
+        return;
+    }
+    
+    // Clear any existing charts to prevent duplicates
+    const canvases = document.querySelectorAll('canvas');
+    canvases.forEach(canvas => {
+        const chartInstance = Chart.getChart(canvas);
+        if (chartInstance) {
+            chartInstance.destroy();
+        }
+    });
+}
 
-    // Initialize all charts with empty data first
-    initCharts();
+/**
+ * Setup event listeners and UI elements
+ */
+function initializeUIElements() {
+    // Set up filter controls
+    document.getElementById('analysis-scope').addEventListener('change', updateScopeFilters);
+    document.getElementById('time-period').addEventListener('change', updateDateFilters);
+    document.getElementById('apply-filters').addEventListener('click', applyFilters);
+    
+    // Set up comparison controls
+    document.getElementById('comparison-type').addEventListener('change', updateComparisonItems);
+    document.getElementById('comparison-metric').addEventListener('change', updateMetricOptions);
+    document.getElementById('run-comparison').addEventListener('click', runComparison);
+    
+    // Initialize scope filters
+    updateScopeFilters();
+}
+
+/**
+ * Setup tab navigation functionality
+ */
+function setupTabNavigation() {
+    const tabItems = document.querySelectorAll('.tab-item');
+    const tabContents = document.querySelectorAll('.tab-content');
+    
+    tabItems.forEach(item => {
+        item.addEventListener('click', function() {
+            const tabId = this.getAttribute('data-tab');
+            
+            // Remove active class from all tabs
+            tabItems.forEach(tab => tab.classList.remove('active'));
+            tabContents.forEach(content => content.classList.remove('active'));
+            
+            // Add active class to current tab
+            this.classList.add('active');
+            document.getElementById(`${tabId}-tab`).classList.add('active');
+        });
+    });
+}
+
+/**
+ * Update scope filter options based on selection
+ */
+function updateScopeFilters() {
+    const scope = document.getElementById('analysis-scope').value;
+    const container = document.getElementById('scope-filter-container');
+    
+    let filterHTML = '';
+    
+    switch(scope) {
+        case 'by-class':
+            filterHTML = `
+                <label class="filter-label">Select Class</label>
+                <select class="filter-select" id="class-filter">
+                    <option value="all">All Classes</option>
+                    <option value="math-101">Mathematics 101</option>
+                    <option value="science-202">Science 202</option>
+                    <option value="english-101">English 101</option>
+                    <option value="history-101">History 101</option>
+                    <option value="cs-202">Computer Science 202</option>
+                </select>
+                <div class="filter-label" style="margin-top: 10px;">Lecture Sequence View</div>
+                <div class="toggle-container">
+                    <input type="checkbox" id="lecture-sequence-toggle" class="toggle-input">
+                    <label for="lecture-sequence-toggle" class="toggle-label"></label>
+                    <span class="toggle-text">Show lecture progression</span>
+                </div>
+            `;
+            break;
+            
+        case 'by-student':
+            filterHTML = `
+                <label class="filter-label">Select Student</label>
+                <select class="filter-select" id="student-filter">
+                    <option value="all">All Students</option>
+                    <option value="student-1">Kim Min-ji</option>
+                    <option value="student-2">Park Ji-hun</option>
+                    <option value="student-3">Lee Seo-yeon</option>
+                    <option value="student-4">Han So-mi</option>
+                    <option value="student-5">Kang Tae-woo</option>
+                </select>
+                <div class="filter-label" style="margin-top: 10px;">Semester Selection</div>
+                <div class="multi-select-container" style="max-height: 120px">
+                    <div class="multi-select-item">
+                        <input type="checkbox" id="sem-2025-1" checked>
+                        <label for="sem-2025-1">2025 Spring</label>
+                    </div>
+                    <div class="multi-select-item">
+                        <input type="checkbox" id="sem-2024-2">
+                        <label for="sem-2024-2">2024 Fall</label>
+                    </div>
+                    <div class="multi-select-item">
+                        <input type="checkbox" id="sem-2024-1">
+                        <label for="sem-2024-1">2024 Spring</label>
+                    </div>
+                    <div class="multi-select-item">
+                        <input type="checkbox" id="sem-2023-2">
+                        <label for="sem-2023-2">2023 Fall</label>
+                    </div>
+                </div>
+            `;
+            break;
+            
+        case 'by-school':
+            filterHTML = `
+                <label class="filter-label">Select School</label>
+                <select class="filter-select" id="school-filter">
+                    <option value="all">All Schools</option>
+                    <option value="school-1">Seoul International</option>
+                    <option value="school-2">Busan Academy</option>
+                    <option value="school-3">Daegu High School</option>
+                </select>
+                <div class="filter-label" style="margin-top: 10px;">Generation</div>
+                <select class="filter-select" id="generation-filter">
+                    <option value="all">All Generations</option>
+                    <option value="2025">2025</option>
+                    <option value="2024">2024</option>
+                    <option value="2023">2023</option>
+                    <option value="2022">2022</option>
+                </select>
+            `;
+            break;
+            
+        default:
+            filterHTML = '<p class="filter-label">No additional filters needed</p>';
+    }
+    
+    container.innerHTML = filterHTML;
+    
+    // Set up any additional event listeners for new elements
+    if (scope === 'by-class') {
+        const lectureToggle = document.getElementById('lecture-sequence-toggle');
+        if (lectureToggle) {
+            lectureToggle.addEventListener('change', function() {
+                if (this.checked) {
+                    // Show lecture sequence specific charts
+                    showLectureSequenceView();
+                } else {
+                    // Show regular class view
+                    showRegularClassView();
+                }
+            });
+        }
+    }
+}
+
+/**
+ * Show lecture sequence specific charts
+ */
+function showLectureSequenceView() {
+    // Add a custom section for lecture sequence if not exists
+    if (!document.getElementById('lecture-sequence-view')) {
+        const parentTab = document.getElementById('attendance-tab');
+        
+        if (parentTab) {
+            // Create a new section for lecture sequence charts
+            const lectureSequenceView = document.createElement('div');
+            lectureSequenceView.id = 'lecture-sequence-view';
+            lectureSequenceView.className = 'chart-row';
+            lectureSequenceView.innerHTML = `
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <div class="chart-title">Attendance by Lecture</div>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="lecture-attendance-chart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <div class="chart-title">Performance by Lecture</div>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="lecture-performance-chart"></canvas>
+                    </div>
+                </div>
+            `;
+            
+            // Insert before the first chart row
+            const firstChartRow = parentTab.querySelector('.chart-row');
+            if (firstChartRow) {
+                parentTab.insertBefore(lectureSequenceView, firstChartRow);
+            } else {
+                parentTab.appendChild(lectureSequenceView);
+            }
+            
+            // Initialize the lecture sequence charts
+            initLectureSequenceCharts();
+        }
+    } else {
+        document.getElementById('lecture-sequence-view').style.display = 'grid';
+    }
+}
+
+/**
+ * Hide lecture sequence specific charts
+ */
+function showRegularClassView() {
+    const lectureSequenceView = document.getElementById('lecture-sequence-view');
+    if (lectureSequenceView) {
+        lectureSequenceView.style.display = 'none';
+    }
+}
+
+/**
+ * Initialize charts for lecture sequence view
+ */
+function initLectureSequenceCharts() {
+    // Lecture attendance chart
+    const lectureAttendanceCtx = document.getElementById('lecture-attendance-chart');
+    if (lectureAttendanceCtx) {
+        new Chart(lectureAttendanceCtx, {
+            type: 'line',
+            data: {
+                labels: ['Lecture 1', 'Lecture 2', 'Lecture 3', 'Lecture 4', 'Lecture 5', 'Lecture 6', 'Lecture 7', 'Lecture 8'],
+                datasets: [{
+                    label: 'Attendance Rate',
+                    data: [95, 90, 85, 88, 92, 86, 89, 91],
+                    borderColor: '#4CAF50',
+                    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { color: '#a3aed0' }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `Attendance: ${context.parsed.y}%`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        min: 50,
+                        max: 100,
+                        ticks: { 
+                            color: '#a3aed0',
+                            callback: value => value + '%'
+                        },
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                    },
+                    x: {
+                        ticks: { color: '#a3aed0' },
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Lecture performance chart
+    const lecturePerformanceCtx = document.getElementById('lecture-performance-chart');
+    if (lecturePerformanceCtx) {
+        new Chart(lecturePerformanceCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Quiz 1', 'Quiz 2', 'Midterm', 'Quiz 3', 'Quiz 4', 'Final'],
+                datasets: [{
+                    label: 'Average Score',
+                    data: [78, 82, 76, 85, 88, 80],
+                    backgroundColor: 'rgba(114, 95, 255, 0.7)',
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { color: '#a3aed0' }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `Average: ${context.parsed.y}%`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        min: 50,
+                        max: 100,
+                        ticks: { 
+                            color: '#a3aed0',
+                            callback: value => value + '%'
+                        },
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                    },
+                    x: {
+                        ticks: { color: '#a3aed0' },
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                    }
+                }
+            }
+        });
+    }
+}
+
+/**
+ * Update date filter options based on time period selection
+ */
+function updateDateFilters() {
+    const timePeriod = document.getElementById('time-period').value;
+    const datePicker = document.getElementById('custom-date-container') || document.createElement('div');
+    
+    if (timePeriod === 'custom') {
+        datePicker.id = 'custom-date-container';
+        datePicker.className = 'filter-group';
+        datePicker.innerHTML = `
+            <label class="filter-label">Date Range</label>
+            <div style="display: flex; gap: 10px;">
+                <input type="date" id="start-date" class="filter-select">
+                <input type="date" id="end-date" class="filter-select">
+            </div>
+        `;
+        
+        const timeFilter = document.getElementById('time-period');
+        timeFilter.parentNode.after(datePicker);
+    } else {
+        if (document.getElementById('custom-date-container')) {
+            document.getElementById('custom-date-container').remove();
+        }
+    }
+}
+
+/**
+ * Apply the selected filters
+ */
+function applyFilters() {
+    console.log('Applying filters...');
+    
+    // Show loading state
+    showLoadingState();
+    
+    const applyButton = document.getElementById('apply-filters');
+    const originalText = applyButton.textContent;
+    applyButton.textContent = 'Applying...';
+    applyButton.disabled = true;
+    
+    // Collect filter data
+    const filters = {
+        scope: document.getElementById('analysis-scope').value,
+        timePeriod: document.getElementById('time-period').value
+    };
+    
+    // Add scope-specific filter
+    if (filters.scope === 'by-class' && document.getElementById('class-filter')) {
+        filters.classId = document.getElementById('class-filter').value;
+    } else if (filters.scope === 'by-student' && document.getElementById('student-filter')) {
+        filters.studentId = document.getElementById('student-filter').value;
+    } else if (filters.scope === 'by-school' && document.getElementById('school-filter')) {
+        filters.schoolId = document.getElementById('school-filter').value;
+    } else if (filters.scope === 'by-generation' && document.getElementById('generation-filter')) {
+        filters.generation = document.getElementById('generation-filter').value;
+    }
+    
+    // Add date range if custom time period
+    if (filters.timePeriod === 'custom') {
+        filters.startDate = document.getElementById('start-date')?.value;
+        filters.endDate = document.getElementById('end-date')?.value;
+    }
+    
+    // Fetch filtered data - with more randomness to show visible changes
+    fetchFilteredData(filters)
+        .then(data => {
+            console.log('Filtered data received:', data);
+            updateDashboardWithData(data);
+        })
+        .catch(err => {
+            console.error('Error fetching filtered data:', err);
+            displayErrorMessage('Unable to apply filters. Please try again.');
+        })
+        .finally(() => {
+            // Reset button
+            applyButton.textContent = originalText;
+            applyButton.disabled = false;
+            hideLoadingState();
+        });
+}
+
+/**
+ * Fetch filtered analytics data from the server
+ */
+function fetchFilteredData(filters) {
+    console.log('Fetching filtered data with:', filters);
+    // For demo purposes, return sample data after a delay with more randomness
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            resolve({
+                totalStudents: 28 + Math.floor(Math.random() * 15),  // More random variation
+                activeStudents: 24 + Math.floor(Math.random() * 6),
+                newEnrollments: 3 + Math.floor(Math.random() * 4),
+                attendanceRate: 65 + Math.floor(Math.random() * 25),  // Wider range
+                attendanceCompare: Math.floor(Math.random() * 12) - 5,  // Allow negative values
+                avgExamScore: 70 + Math.floor(Math.random() * 25),
+                scoreCompare: Math.floor(Math.random() * 10) - 3,  // Allow negative values
+                homeworkCompletion: 75 + Math.floor(Math.random() * 20),
+                homeworkCompare: Math.floor(Math.random() * 8) - 2,  // Allow negative values
+                // Add data for charts
+                chartData: {
+                    attendancePatterns: generateRandomAttendanceData(),
+                    gradeDistribution: generateRandomGradeData(),
+                    subjectPerformance: generateRandomSubjectData()
+                }
+            });
+        }, 1000);
+    });
+}
+
+/**
+ * Generate random attendance data for charts
+ */
+function generateRandomAttendanceData() {
+    return {
+        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+        values: [
+            60 + Math.floor(Math.random() * 30),
+            60 + Math.floor(Math.random() * 30),
+            60 + Math.floor(Math.random() * 30),
+            60 + Math.floor(Math.random() * 30),
+            60 + Math.floor(Math.random() * 30),
+            60 + Math.floor(Math.random() * 30)
+        ]
+    };
+}
+
+/**
+ * Generate random grade distribution data
+ */
+function generateRandomGradeData() {
+    return {
+        labels: ['A', 'B', 'C', 'D', 'F'],
+        values: [
+            Math.floor(Math.random() * 15) + 5,
+            Math.floor(Math.random() * 12) + 5,
+            Math.floor(Math.random() * 8) + 3,
+            Math.floor(Math.random() * 5) + 1,
+            Math.floor(Math.random() * 3)
+        ]
+    };
+}
+
+/**
+ * Generate random subject performance data
+ */
+function generateRandomSubjectData() {
+    return {
+        labels: ['Math', 'Science', 'English', 'History', 'Arts'],
+        values: [
+            70 + Math.floor(Math.random() * 25),
+            70 + Math.floor(Math.random() * 25),
+            70 + Math.floor(Math.random() * 25),
+            70 + Math.floor(Math.random() * 25),
+            70 + Math.floor(Math.random() * 25)
+        ]
+    };
+}
+
+/**
+ * Fetch analytics data from the server
+ */
+function fetchAnalyticsData() {
+    // In a real implementation, this would call the API
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            resolve({
+                totalStudents: 28,
+                activeStudents: 24,
+                newEnrollments: 3,
+                attendanceRate: 78,
+                attendanceCompare: 5,
+                avgExamScore: 82,
+                scoreCompare: 3,
+                homeworkCompletion: 91,
+                homeworkCompare: 1
+            });
+        }, 500);
+    });
+}
+
+/**
+ * Update dashboard with the provided data
+ */
+function updateDashboardWithData(data) {
+    console.log('Updating dashboard with data:', data);
+    
+    // Update stats cards
+    updateSummaryStats(data);
+    
+    // Update charts with new data
+    if (data.chartData) {
+        updateChartsWithData(data.chartData);
+    } else {
+        // If no chart data provided, reinitialize with random data
+        initAllCharts();
+    }
+    
+    // Add a visual indication that data has been updated
+    flashUpdateNotification();
+}
+
+/**
+ * Flash a notification that data has been updated
+ */
+function flashUpdateNotification() {
+    const notification = document.createElement('div');
+    notification.className = 'update-notification';
+    notification.textContent = 'Data updated';
+    notification.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background-color: rgba(76, 175, 80, 0.9);
+        color: white;
+        padding: 10px 20px;
+        border-radius: 4px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        z-index: 1000;
+        animation: fadeIn 0.3s, fadeOut 0.3s 2s forwards;
+    `;
+    
+    // Add styles if not already present
+    if (!document.getElementById('notification-style')) {
+        const style = document.createElement('style');
+        style.id = 'notification-style';
+        style.textContent = `
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            @keyframes fadeOut {
+                from { opacity: 1; transform: translateY(0); }
+                to { opacity: 0; transform: translateY(-20px); }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    document.body.appendChild(notification);
+    
+    // Remove after 2.5 seconds
+    setTimeout(() => {
+        notification.remove();
+    }, 2500);
+}
+
+/**
+ * Update charts with provided data
+ */
+function updateChartsWithData(chartData) {
+    console.log('Updating charts with data:', chartData);
+    
+    // Make sure Chart.js is loaded
+    if (!window.Chart) {
+        console.error('Chart.js not loaded, cannot update charts');
+        displayErrorMessage('Failed to update charts. Please refresh the page.');
+        return;
+    }
+    
+    // Update attendance patterns chart
+    if (chartData.attendancePatterns) {
+        updateAttendancePatternChart(chartData.attendancePatterns);
+    }
+    
+    // Update grade distribution chart
+    if (chartData.gradeDistribution) {
+        updateGradeDistributionChart(chartData.gradeDistribution);
+    }
+    
+    // Update subject performance chart
+    if (chartData.subjectPerformance) {
+        updateSubjectPerformanceChart(chartData.subjectPerformance);
+    }
+    
+    // Initialize other charts that might not have specific data
+    initRemainingCharts();
+}
+
+/**
+ * Update the attendance pattern chart with new data
+ */
+function updateAttendancePatternChart(data) {
+    const attendancePatternCtx = document.getElementById('attendance-pattern-chart');
+    if (!attendancePatternCtx) {
+        console.error('Attendance pattern chart canvas not found');
+        return;
+    }
+    
+    // Check if chart already exists and destroy it
+    let chartInstance = Chart.getChart(attendancePatternCtx);
+    if (chartInstance) {
+        chartInstance.destroy();
+    }
+    
+    // Create new chart with updated data
+    new Chart(attendancePatternCtx, {
+        type: 'line',
+        data: {
+            labels: data.labels,
+            datasets: [{
+                label: 'Attendance Rate',
+                data: data.values,
+                borderColor: '#4CAF50',
+                backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+                duration: 1000,
+                easing: 'easeOutQuart'
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        color: '#a3aed0'
+                    }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    min: 50,
+                    max: 100,
+                    ticks: {
+                        color: '#a3aed0'
+                    },
+                    grid: {
+                        color: 'rgba(163, 174, 208, 0.1)'
+                    }
+                },
+                x: {
+                    ticks: {
+                        color: '#a3aed0'
+                    },
+                    grid: {
+                        color: 'rgba(163, 174, 208, 0.1)'
+                    }
+                }
+            }
+        }
+    });
+}
+
+/**
+ * Update the grade distribution chart with new data
+ */
+function updateGradeDistributionChart(data) {
+    const gradeDistCtx = document.getElementById('grade-distribution-chart');
+    if (!gradeDistCtx) {
+        console.error('Grade distribution chart canvas not found');
+        return;
+    }
+    
+    // Check if chart already exists and destroy it
+    let chartInstance = Chart.getChart(gradeDistCtx);
+    if (chartInstance) {
+        chartInstance.destroy();
+    }
+    
+    // Create new chart with updated data
+    new Chart(gradeDistCtx, {
+        type: 'bar',
+        data: {
+            labels: data.labels,
+            datasets: [{
+                label: 'Number of Students',
+                data: data.values,
+                backgroundColor: 'rgba(114, 95, 255, 0.7)',
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+                duration: 1000,
+                easing: 'easeOutQuart'
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        color: '#a3aed0'
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: '#a3aed0'
+                    },
+                    grid: {
+                        color: 'rgba(163, 174, 208, 0.1)'
+                    }
+                },
+                x: {
+                    ticks: {
+                        color: '#a3aed0'
+                    },
+                    grid: {
+                        color: 'rgba(163, 174, 208, 0.1)'
+                    }
+                }
+            }
+        }
+    });
+}
+
+/**
+ * Update the subject performance chart with new data
+ */
+function updateSubjectPerformanceChart(data) {
+    const subjectPerfCtx = document.getElementById('subject-performance-chart');
+    if (!subjectPerfCtx) {
+        console.error('Subject performance chart canvas not found');
+        return;
+    }
+    
+    // Check if chart already exists and destroy it
+    let chartInstance = Chart.getChart(subjectPerfCtx);
+    if (chartInstance) {
+        chartInstance.destroy();
+    }
+    
+    // Create new chart with updated data
+    new Chart(subjectPerfCtx, {
+        type: 'radar',
+        data: {
+            labels: data.labels,
+            datasets: [{
+                label: 'Class Average',
+                data: data.values,
+                borderColor: 'rgba(114, 95, 255, 1)',
+                backgroundColor: 'rgba(114, 95, 255, 0.2)',
+                borderWidth: 2,
+                pointBackgroundColor: 'rgba(114, 95, 255, 1)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+                duration: 1000,
+                easing: 'easeOutQuart'
+            },
+            scales: {
+                r: {
+                    angleLines: {
+                        color: 'rgba(163, 174, 208, 0.1)'
+                    },
+                    grid: {
+                        color: 'rgba(163, 174, 208, 0.1)'
+                    },
+                    pointLabels: {
+                        color: '#a3aed0'
+                    },
+                    ticks: {
+                        backdropColor: 'transparent',
+                        color: '#a3aed0'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        color: '#a3aed0'
+                    }
+                }
+            }
+        }
+    });
+}
+
+/**
+ * Initialize remaining charts that don't have specific data updates
+ */
+function initRemainingCharts() {
+    // Performance vs Attendance Chart (scatter plot)
+    const perfAttendCtx = document.getElementById('performance-attendance-chart');
+    if (perfAttendCtx) {
+        let chartInstance = Chart.getChart(perfAttendCtx);
+        if (chartInstance) {
+            chartInstance.destroy();
+        }
+        
+        // Generate random scatter data
+        const scatterData = [];
+        for (let i = 0; i < 15; i++) {
+            scatterData.push({
+                x: 60 + Math.floor(Math.random() * 40), // attendance 60-100%
+                y: 60 + Math.floor(Math.random() * 40)  // score 60-100%
+            });
+        }
+        
+        new Chart(perfAttendCtx, {
+            type: 'scatter',
+            data: {
+                datasets: [{
+                    label: 'Students',
+                    data: scatterData,
+                    backgroundColor: 'rgba(114, 95, 255, 0.7)',
+                    pointRadius: 6,
+                    pointHoverRadius: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 1000,
+                    easing: 'easeOutQuart'
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            color: '#a3aed0'
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `Attendance: ${context.parsed.x}%, Score: ${context.parsed.y}%`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Average Score (%)',
+                            color: '#a3aed0'
+                        },
+                        min: 50,
+                        max: 100,
+                        ticks: {
+                            color: '#a3aed0'
+                        },
+                        grid: {
+                            color: 'rgba(163, 174, 208, 0.1)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Attendance Rate (%)',
+                            color: '#a3aed0'
+                        },
+                        min: 50,
+                        max: 100,
+                        ticks: {
+                            color: '#a3aed0'
+                        },
+                        grid: {
+                            color: 'rgba(163, 174, 208, 0.1)'
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Update attendance distribution chart (pie chart)
+    const attendanceDistCtx = document.getElementById('attendance-distribution-chart');
+    if (attendanceDistCtx) {
+        let chartInstance = Chart.getChart(attendanceDistCtx);
+        if (chartInstance) {
+            chartInstance.destroy();
+        }
+        
+        // Generate random distribution data
+        const total = 28;
+        const a = Math.floor(Math.random() * 12) + 6; // 6-18
+        const b = Math.floor(Math.random() * 10) + 4; // 4-14
+        const c = Math.floor(Math.random() * 8) + 2;  // 2-10
+        const d = Math.max(1, total - a - b - c);     // at least 1
+        
+        new Chart(attendanceDistCtx, {
+            type: 'pie',
+            data: {
+                labels: ['90%+', '80-90%', '70-80%', 'Below 70%'],
+                datasets: [{
+                    data: [a, b, c, d],
+                    backgroundColor: [
+                        'rgba(76, 175, 80, 0.8)',
+                        'rgba(255, 193, 7, 0.8)',
+                        'rgba(255, 152, 0, 0.8)',
+                        'rgba(244, 67, 54, 0.8)'
+                    ],
+                    borderColor: [
+                        'rgba(76, 175, 80, 1)',
+                        'rgba(255, 193, 7, 1)',
+                        'rgba(255, 152, 0, 1)',
+                        'rgba(244, 67, 54, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 1000,
+                    easing: 'easeOutQuart'
+                },
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            color: '#a3aed0'
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+/**
+ * Update comparison items based on the selected comparison type
+ */
+function updateComparisonItems() {
+    const comparisonType = document.getElementById('comparison-type').value;
+    const itemsContainer = document.getElementById('comparison-items');
+    
+    let itemsHTML = '';
+    
+    switch(comparisonType) {
+        case 'classes':
+            itemsHTML = `
+                <div class="multi-select-item"><input type="checkbox" id="class1" checked><label for="class1">Mathematics 101</label></div>
+                <div class="multi-select-item"><input type="checkbox" id="class2" checked><label for="class2">Science 202</label></div>
+                <div class="multi-select-item"><input type="checkbox" id="class3"><label for="class3">English 101</label></div>
+                <div class="multi-select-item"><input type="checkbox" id="class4"><label for="class4">History 101</label></div>
+                <div class="multi-select-item"><input type="checkbox" id="class5"><label for="class5">Computer Science 202</label></div>
+            `;
+            break;
+            
+        case 'students':
+            itemsHTML = `
+                <div class="multi-select-item"><input type="checkbox" id="student1" checked><label for="student1">Kim Min-ji</label></div>
+                <div class="multi-select-item"><input type="checkbox" id="student2" checked><label for="student2">Park Ji-hun</label></div>
+                <div class="multi-select-item"><input type="checkbox" id="student3"><label for="student3">Lee Seo-yeon</label></div>
+                <div class="multi-select-item"><input type="checkbox" id="student4"><label for="student4">Han So-mi</label></div>
+                <div class="multi-select-item"><input type="checkbox" id="student5"><label for="student5">Kang Tae-woo</label></div>
+            `;
+            break;
+            
+        case 'schools':
+            itemsHTML = `
+                <div class="multi-select-item"><input type="checkbox" id="school1" checked><label for="school1">Seoul International</label></div>
+                <div class="multi-select-item"><input type="checkbox" id="school2" checked><label for="school2">Busan Academy</label></div>
+                <div class="multi-select-item"><input type="checkbox" id="school3"><label for="school3">Daegu High School</label></div>
+            `;
+            break;
+            
+        case 'generations':
+            itemsHTML = `
+                <div class="multi-select-item"><input type="checkbox" id="gen1" checked><label for="gen1">2023</label></div>
+                <div class="multi-select-item"><input type="checkbox" id="gen2" checked><label for="gen2">2022</label></div>
+                <div class="multi-select-item"><input type="checkbox" id="gen3"><label for="gen3">2021</label></div>
+                <div class="multi-select-item"><input type="checkbox" id="gen4"><label for="gen4">2020</label></div>
+            `;
+            break;
+    }
+    
+    itemsContainer.innerHTML = itemsHTML;
+}
+
+/**
+ * Update metric options based on the selected comparison metric
+ */
+function updateMetricOptions() {
+    // In a real implementation, this would update additional options
+    // based on the selected metric
+    console.log('Metric updated to:', document.getElementById('comparison-metric').value);
+}
+
+/**
+ * Run the comparison based on selected options
+ */
+function runComparison() {
+    console.log('Running comparison...');
+    
+    // Show loading state
+    const compareButton = document.getElementById('run-comparison');
+    const originalText = compareButton.textContent;
+    compareButton.textContent = 'Running...';
+    compareButton.disabled = true;
+    
+    // In a real implementation, this would call the API with the selected options
+    setTimeout(() => {
+        // Reinitialize comparison charts with "new" data
+        const comparisonChartInstance = Chart.getChart('comparison-chart');
+        if (comparisonChartInstance) {
+            comparisonChartInstance.destroy();
+        }
+        
+        const correlationChartInstance = Chart.getChart('correlation-chart');
+        if (correlationChartInstance) {
+            correlationChartInstance.destroy();
+        }
+        
+        // Initialize with "new" data (random variations)
+        initComparisonCharts();
+        
+        // Update stats table with random data
+        updateComparisonTable();
+        
+        // Reset button
+        compareButton.textContent = originalText;
+        compareButton.disabled = false;
+    }, 1500);
+}
+
+/**
+ * Update the comparison stats table with random data
+ */
+function updateComparisonTable() {
+    const statsTable = document.getElementById('stats-table');
+    
+    // Generate random variations
+    const data = [
+        {
+            name: 'Mathematics 101',
+            avg: (85 + Math.random() * 3).toFixed(1),
+            median: (86 + Math.random() * 3).toFixed(1),
+            stdDev: (7.4 + Math.random()).toFixed(1),
+            min: (68 + Math.random() * 2).toFixed(1),
+            max: (98 + Math.random()).toFixed(1)
+        },
+        {
+            name: 'Science 202',
+            avg: (81 + Math.random() * 3).toFixed(1),
+            median: (83 + Math.random() * 3).toFixed(1),
+            stdDev: (8.2 + Math.random()).toFixed(1),
+            min: (62 + Math.random() * 2).toFixed(1),
+            max: (97 + Math.random()).toFixed(1)
+        }
+    ];
+    
+    // Update the table
+    statsTable.innerHTML = data.map(item => `
+        <tr>
+            <td>${item.name}</td>
+            <td>${item.avg}%</td>
+            <td>${item.median}%</td>
+            <td>${item.stdDev}</td>
+            <td>${item.min}%</td>
+            <td>${item.max}%</td>
+        </tr>
+    `).join('');
 }
 
 /**
@@ -79,68 +1223,31 @@ function loadAnalyticsData(filters = null) {
         }
     });
     
-    // Fetch summary data
-    fetch(`/analytics/summary?${queryParams.toString()}`)
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (data.success) {
-                // Update summary statistics
-                updateSummaryStats(data.summary);
-                
-                // Fetch attendance data
-                return fetch(`/analytics/attendance?${queryParams.toString()}`);
-            } else {
-                throw new Error(data.error || 'Failed to load summary data');
-            }
-        })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (data.success) {
-                // Update attendance data
-                updateAttendanceData(data.attendanceAnalytics);
-                
-                // Fetch performance data
-                return fetch(`/analytics/performance?${queryParams.toString()}`);
-            } else {
-                throw new Error(data.error || 'Failed to load attendance data');
-            }
-        })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (data.success) {
-                // Update performance data
-                updatePerformanceData(data.performanceAnalytics);
-            } else {
-                throw new Error(data.error || 'Failed to load performance data');
-            }
-        })
-        .catch(error => {
+    // Using a timeout to simulate network request for demo purposes
+    // This will ensure the loading animation shows correctly
+    setTimeout(() => {
+        try {
+            // In a real app, these would be fetch calls to the server
+            // For now, use sample data directly
+            console.log('Loading analytics with filters:', appliedFilters);
+            
+            // Load sample data
+            loadSampleData();
+            
+            // Initialize charts with the data
+            initCharts();
+            
+            hideLoadingState();
+        } catch (error) {
             console.error('Error loading analytics data:', error);
-            // Show error message to user
             displayErrorMessage('Failed to load analytics data. Please try again later.');
             
-            // If error occurs, load sample data so the dashboard isn't empty
+            // If error occurs, still load sample data so the dashboard isn't empty
             loadSampleData();
-        })
-        .finally(() => {
-            // Hide loading indicator
+            initCharts();
             hideLoadingState();
-        });
+        }
+    }, 800);  // Simulate network delay
 }
 
 /**
@@ -664,556 +1771,516 @@ function runComparisonAnalysis(type, metric, items) {
 }
 
 /**
- * Load sample data for analytics dashboard
+ * Load sample data for the analytics dashboard when API calls fail or for demo purposes
  */
-function loadSampleData(filters) {
-    // Sample data - in a real app, this would come from an API
+function loadSampleData() {
+    console.log('Loading sample data');
     
-    // Update summary stats
+    // Update the summary stats cards
     updateSummaryStats({
-        students: {
-            total: 28,
-            active: 24,
-            newEnrollments: 3
-        },
-        attendance: {
-            rate: 78,
-            comparison: 5
-        },
-        performance: {
-            averageScore: 82,
-            comparison: 3
-        },
-        homework: {
-            completionRate: 91,
-            comparison: 1
-        }
+        totalStudents: 28,
+        activeStudents: 24,
+        newEnrollments: 3,
+        attendanceRate: 78,
+        attendanceCompare: 5,
+        avgExamScore: 82,
+        scoreCompare: 3,
+        homeworkCompletion: 91,
+        homeworkCompare: 1
     });
     
-    // Update attendance table
-    updateAttendanceTable([
-        {
-            name: 'Kim Min-ji',
-            class: 'Math 101',
-            rate: 65,
-            missed: 7,
-            pattern: 'Monday absences'
-        },
-        {
-            name: 'Park Ji-hun',
-            class: 'Science 202',
-            rate: 70,
-            missed: 6,
-            pattern: 'Random pattern'
-        },
-        {
-            name: 'Lee Seo-yeon',
-            class: 'English 101',
-            rate: 72,
-            missed: 5,
-            pattern: 'Afternoon sessions'
-        }
-    ]);
+    // Initialize charts with sample data
+    initAllCharts();
+}
+
+/**
+ * Update summary statistics on the dashboard
+ */
+function updateSummaryStats(stats) {
+    // Update each statistic element with the provided data
+    document.getElementById('total-students-stat').textContent = stats.totalStudents;
+    document.getElementById('active-students').textContent = `${stats.activeStudents} active`;
+    document.getElementById('recent-enrollments').textContent = `${stats.newEnrollments} new`;
     
-    // Load other sample data for charts
-    loadAttendanceSampleData();
-    loadPerformanceSampleData();
-}
-
-/**
- * Update summary statistics cards
- */
-function updateSummaryStats(data) {
-    // Update student stats
-    document.getElementById('total-students-stat').textContent = data.students.total;
-    document.getElementById('active-students').textContent = `${data.students.active} active`;
-    document.getElementById('recent-enrollments').textContent = `${data.students.newEnrollments} new`;
+    document.getElementById('attendance-rate-stat').textContent = `${stats.attendanceRate}%`;
+    document.getElementById('attendance-compare').textContent = `+${stats.attendanceCompare}% vs. average`;
     
-    // Update attendance stats
-    document.getElementById('attendance-rate-stat').textContent = `${data.attendance.rate}%`;
-    document.getElementById('attendance-compare').textContent = 
-        `${data.attendance.comparison > 0 ? '+' : ''}${data.attendance.comparison}% vs. average`;
+    document.getElementById('avg-exam-score-stat').textContent = `${stats.avgExamScore}%`;
+    document.getElementById('score-compare').textContent = `+${stats.scoreCompare}% vs. previous`;
     
-    // Update performance stats
-    document.getElementById('avg-exam-score-stat').textContent = `${data.performance.averageScore}%`;
-    document.getElementById('score-compare').textContent = 
-        `${data.performance.comparison > 0 ? '+' : ''}${data.performance.comparison}% vs. previous`;
-    
-    // Update homework completion stats
-    document.getElementById('homework-completion-stat').textContent = `${data.homework.completionRate}%`;
-    document.getElementById('homework-compare').textContent = 
-        `${data.homework.comparison > 0 ? '+' : ''}${data.homework.comparison}% vs. average`;
+    document.getElementById('homework-completion-stat').textContent = `${stats.homeworkCompletion}%`;
+    document.getElementById('homework-compare').textContent = `+${stats.homeworkCompare}% vs. average`;
 }
 
 /**
- * Update attendance table with data
+ * Initialize all charts
  */
-function updateAttendanceTable(data) {
-    // This would update the table in a real app
-    // For this demo, the table is already populated in the HTML
-}
-
-/**
- * Load sample data specifically for attendance charts
- */
-function loadAttendanceSampleData() {
-    // This would populate data for attendance charts
-    // The actual chart drawing is done in initCharts()
-}
-
-/**
- * Load sample data specifically for performance charts
- */
-function loadPerformanceSampleData() {
-    // This would populate data for performance charts
-    // The actual chart drawing is done in initCharts() 
-}
-
-/**
- * Initialize all charts on the dashboard using Chart.js
- */
-function initCharts() {
-    // Check if Chart.js is loaded
-    if (typeof Chart === 'undefined') {
-        // Load Chart.js if not present
-        loadChartJs(() => {
-            // Initialize charts after Chart.js loads
-            initAttendanceCharts();
-            initPerformanceCharts();
-            initComparisonCharts();
+function initAllCharts() {
+    // Make sure Chart.js is loaded
+    if (window.Chart) {
+        // Clear any existing charts to prevent duplicates
+        const canvases = document.querySelectorAll('canvas');
+        canvases.forEach(canvas => {
+            const chartInstance = Chart.getChart(canvas);
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
         });
-    } else {
-        // Chart.js is already loaded
+        
+        // Initialize charts for each tab
         initAttendanceCharts();
         initPerformanceCharts();
         initComparisonCharts();
+        initCommentCharts();  // Add this line to initialize comment charts
+        
+        console.log('All charts initialized successfully');
+    } else {
+        console.error('Chart.js not loaded, cannot initialize charts');
     }
 }
 
 /**
- * Load Chart.js library
- */
-function loadChartJs(callback) {
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js';
-    script.onload = callback;
-    document.head.appendChild(script);
-}
-
-/**
- * Initialize attendance tab charts
+ * Initialize attendance related charts
  */
 function initAttendanceCharts() {
-    // Define chart options for consistent styling
-    const chartOptions = {
-        plugins: {
-            legend: {
-                labels: {
-                    color: '#d7e1ee',
-                    font: {
-                        family: "'Poppins', sans-serif"
-                    }
-                }
-            }
-        },
-        scales: {
-            x: {
-                grid: {
-                    color: 'rgba(255, 255, 255, 0.05)'
-                },
-                ticks: {
-                    color: '#a3aed0'
-                }
-            },
-            y: {
-                grid: {
-                    color: 'rgba(255, 255, 255, 0.05)'
-                },
-                ticks: {
-                    color: '#a3aed0'
-                }
-            }
-        },
-        responsive: true,
-        maintainAspectRatio: false
-    };
-
-    // Attendance Pattern Chart (Line Chart)
+    // Attendance Patterns Chart
     const attendancePatternCtx = document.getElementById('attendance-pattern-chart');
     if (attendancePatternCtx) {
-        // Sample data for attendance patterns
-        const attendancePatternData = {
-            labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5', 'Week 6', 'Week 7', 'Week 8'],
-            datasets: [{
-                label: 'Math 101',
-                data: [80, 82, 75, 85, 88, 85, 90, 89],
-                borderColor: '#725fff',
-                backgroundColor: 'rgba(114, 95, 255, 0.1)',
-                tension: 0.3
-            }, {
-                label: 'Science 202',
-                data: [78, 75, 72, 76, 80, 75, 78, 82],
-                borderColor: '#2196F3',
-                backgroundColor: 'rgba(33, 150, 243, 0.1)',
-                tension: 0.3
-            }]
-        };
-        
         new Chart(attendancePatternCtx, {
             type: 'line',
-            data: attendancePatternData,
-            options: chartOptions
+            data: {
+                labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                datasets: [{
+                    label: 'Attendance Rate',
+                    data: [75, 69, 80, 81, 76, 78],
+                    borderColor: '#4CAF50',
+                    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            color: '#a3aed0'
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        min: 50,
+                        max: 100,
+                        ticks: {
+                            color: '#a3aed0'
+                        },
+                        grid: {
+                            color: 'rgba(163, 174, 208, 0.1)'
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            color: '#a3aed0'
+                        },
+                        grid: {
+                            color: 'rgba(163, 174, 208, 0.1)'
+                        }
+                    }
+                }
+            }
         });
+    } else {
+        console.error('Attendance pattern chart canvas not found');
     }
     
-    // Attendance By Day Chart (Bar Chart)
+    // Attendance by Day Chart
     const attendanceByDayCtx = document.getElementById('attendance-by-day-chart');
     if (attendanceByDayCtx) {
-        // Sample data for attendance by day
-        const attendanceByDayData = {
-            labels: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-            datasets: [{
-                label: 'Attendance Rate',
-                data: [75, 82, 88, 80, 72],
-                backgroundColor: [
-                    'rgba(114, 95, 255, 0.7)',
-                    'rgba(33, 150, 243, 0.7)',
-                    'rgba(76, 175, 80, 0.7)',
-                    'rgba(255, 159, 67, 0.7)',
-                    'rgba(233, 30, 99, 0.7)'
-                ]
-            }]
-        };
-        
         new Chart(attendanceByDayCtx, {
             type: 'bar',
-            data: attendanceByDayData,
+            data: {
+                labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+                datasets: [{
+                    label: 'Attendance Rate by Day',
+                    data: [68, 82, 79, 84, 75],
+                    backgroundColor: 'rgba(114, 95, 255, 0.7)',
+                    borderRadius: 4
+                }]
+            },
             options: {
-                ...chartOptions,
+                responsive: true,
+                maintainAspectRatio: false,
                 plugins: {
-                    ...chartOptions.plugins,
                     legend: {
-                        display: false
+                        position: 'top',
+                        labels: {
+                            color: '#a3aed0'
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        min: 50,
+                        max: 100,
+                        ticks: {
+                            color: '#a3aed0'
+                        },
+                        grid: {
+                            color: 'rgba(163, 174, 208, 0.1)'
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            color: '#a3aed0'
+                        },
+                        grid: {
+                            color: 'rgba(163, 174, 208, 0.1)'
+                        }
                     }
                 }
             }
         });
+    } else {
+        console.error('Attendance by day chart canvas not found');
     }
     
-    // Attendance Distribution Chart (Doughnut Chart)
-    const attendanceDistributionCtx = document.getElementById('attendance-distribution-chart');
-    if (attendanceDistributionCtx) {
-        // Sample data for attendance distribution
-        const attendanceDistributionData = {
-            labels: ['90-100%', '80-89%', '70-79%', '60-69%', '<60%'],
-            datasets: [{
-                data: [6, 8, 7, 4, 3],
-                backgroundColor: [
-                    'rgba(76, 175, 80, 0.8)',  // Green
-                    'rgba(33, 150, 243, 0.8)', // Blue
-                    'rgba(255, 235, 59, 0.8)', // Yellow
-                    'rgba(255, 159, 67, 0.8)', // Orange
-                    'rgba(244, 67, 54, 0.8)'   // Red
-                ],
-                borderWidth: 1
-            }]
-        };
-        
-        new Chart(attendanceDistributionCtx, {
-            type: 'doughnut',
-            data: attendanceDistributionData,
+    // Attendance Distribution Chart
+    const attendanceDistCtx = document.getElementById('attendance-distribution-chart');
+    if (attendanceDistCtx) {
+        new Chart(attendanceDistCtx, {
+            type: 'pie',
+            data: {
+                labels: ['90%+', '80-90%', '70-80%', 'Below 70%'],
+                datasets: [{
+                    data: [12, 8, 5, 3],
+                    backgroundColor: [
+                        'rgba(76, 175, 80, 0.8)',
+                        'rgba(255, 193, 7, 0.8)',
+                        'rgba(255, 152, 0, 0.8)',
+                        'rgba(244, 67, 54, 0.8)'
+                    ],
+                    borderColor: [
+                        'rgba(76, 175, 80, 1)',
+                        'rgba(255, 193, 7, 1)',
+                        'rgba(255, 152, 0, 1)',
+                        'rgba(244, 67, 54, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
             options: {
-                ...chartOptions,
-                cutout: '65%',
+                responsive: true,
+                maintainAspectRatio: false,
                 plugins: {
-                    ...chartOptions.plugins,
                     legend: {
-                        position: 'bottom'
+                        position: 'right',
+                        labels: {
+                            color: '#a3aed0'
+                        }
                     }
                 }
             }
         });
+    } else {
+        console.error('Attendance distribution chart canvas not found');
     }
 }
 
 /**
- * Initialize performance tab charts
+ * Initialize performance related charts
  */
 function initPerformanceCharts() {
-    // Chart styling options
-    const chartOptions = {
-        plugins: {
-            legend: {
-                labels: {
-                    color: '#d7e1ee',
-                    font: {
-                        family: "'Poppins', sans-serif"
-                    }
-                }
-            }
-        },
-        scales: {
-            x: {
-                grid: {
-                    color: 'rgba(255, 255, 255, 0.05)'
-                },
-                ticks: {
-                    color: '#a3aed0'
-                }
-            },
-            y: {
-                grid: {
-                    color: 'rgba(255, 255, 255, 0.05)'
-                },
-                ticks: {
-                    color: '#a3aed0'
-                }
-            }
-        },
-        responsive: true,
-        maintainAspectRatio: false
-    };
-    
     // Grade Distribution Chart
-    const gradeDistributionCtx = document.getElementById('grade-distribution-chart');
-    if (gradeDistributionCtx) {
-        const gradeDistributionData = {
-            labels: ['A', 'B', 'C', 'D', 'F'],
-            datasets: [{
-                label: 'Number of Students',
-                data: [8, 10, 6, 3, 1],
-                backgroundColor: [
-                    'rgba(76, 175, 80, 0.8)',  // Green
-                    'rgba(33, 150, 243, 0.8)', // Blue
-                    'rgba(255, 235, 59, 0.8)', // Yellow
-                    'rgba(255, 159, 67, 0.8)', // Orange
-                    'rgba(244, 67, 54, 0.8)'   // Red
-                ],
-                borderWidth: 0
-            }]
-        };
-        
-        new Chart(gradeDistributionCtx, {
+    const gradeDistCtx = document.getElementById('grade-distribution-chart');
+    if (gradeDistCtx) {
+        new Chart(gradeDistCtx, {
             type: 'bar',
-            data: gradeDistributionData,
+            data: {
+                labels: ['A', 'B', 'C', 'D', 'F'],
+                datasets: [{
+                    label: 'Number of Students',
+                    data: [10, 8, 6, 3, 1],
+                    backgroundColor: 'rgba(114, 95, 255, 0.7)',
+                    borderRadius: 4
+                }]
+            },
             options: {
-                ...chartOptions,
+                responsive: true,
+                maintainAspectRatio: false,
                 plugins: {
-                    ...chartOptions.plugins,
                     legend: {
-                        display: false
+                        position: 'top',
+                        labels: {
+                            color: '#a3aed0'
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            color: '#a3aed0'
+                        },
+                        grid: {
+                            color: 'rgba(163, 174, 208, 0.1)'
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            color: '#a3aed0'
+                        },
+                        grid: {
+                            color: 'rgba(163, 174, 208, 0.1)'
+                        }
                     }
                 }
             }
         });
+    } else {
+        console.error('Grade distribution chart canvas not found');
     }
     
     // Subject Performance Chart
-    const subjectPerformanceCtx = document.getElementById('subject-performance-chart');
-    if (subjectPerformanceCtx) {
-        const subjectPerformanceData = {
-            labels: ['Mathematics', 'Science', 'English', 'Social Studies', 'Arts'],
-            datasets: [{
-                label: 'Average Score (%)',
-                data: [82, 78, 85, 76, 90],
-                backgroundColor: 'rgba(114, 95, 255, 0.7)',
-                borderColor: '#725fff',
-                borderWidth: 1
-            }]
-        };
-        
-        new Chart(subjectPerformanceCtx, {
+    const subjectPerfCtx = document.getElementById('subject-performance-chart');
+    if (subjectPerfCtx) {
+        new Chart(subjectPerfCtx, {
             type: 'radar',
-            data: subjectPerformanceData,
+            data: {
+                labels: ['Math', 'Science', 'English', 'History', 'Arts'],
+                datasets: [{
+                    label: 'Class Average',
+                    data: [82, 79, 85, 78, 88],
+                    borderColor: 'rgba(114, 95, 255, 1)',
+                    backgroundColor: 'rgba(114, 95, 255, 0.2)',
+                    borderWidth: 2,
+                    pointBackgroundColor: 'rgba(114, 95, 255, 1)'
+                }]
+            },
             options: {
-                ...chartOptions,
-                scales: {},
-                elements: {
-                    line: {
-                        borderWidth: 3
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    r: {
+                        angleLines: {
+                            color: 'rgba(163, 174, 208, 0.1)'
+                        },
+                        grid: {
+                            color: 'rgba(163, 174, 208, 0.1)'
+                        },
+                        pointLabels: {
+                            color: '#a3aed0'
+                        },
+                        ticks: {
+                            backdropColor: 'transparent',
+                            color: '#a3aed0'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            color: '#a3aed0'
+                        }
                     }
                 }
             }
         });
+    } else {
+        console.error('Subject performance chart canvas not found');
     }
     
     // Performance vs Attendance Chart
-    const performanceAttendanceCtx = document.getElementById('performance-attendance-chart');
-    if (performanceAttendanceCtx) {
-        const performanceAttendanceData = {
-            datasets: [{
-                label: 'Students',
-                data: [
-                    { x: 95, y: 91 },
-                    { x: 88, y: 85 },
-                    { x: 75, y: 72 },
-                    { x: 92, y: 88 },
-                    { x: 65, y: 60 },
-                    { x: 78, y: 75 },
-                    { x: 85, y: 82 },
-                    { x: 70, y: 65 },
-                    { x: 60, y: 55 },
-                    { x: 98, y: 95 },
-                    { x: 82, y: 78 },
-                    { x: 90, y: 88 },
-                    { x: 72, y: 68 },
-                    { x: 75, y: 70 },
-                    { x: 80, y: 76 }
-                ],
-                backgroundColor: 'rgba(114, 95, 255, 0.7)',
-                borderColor: '#725fff'
-            }]
-        };
-        
-        new Chart(performanceAttendanceCtx, {
+    const perfAttendCtx = document.getElementById('performance-attendance-chart');
+    if (perfAttendCtx) {
+        new Chart(perfAttendCtx, {
             type: 'scatter',
-            data: performanceAttendanceData,
+            data: {
+                datasets: [{
+                    label: 'Students',
+                    data: [
+                        { x: 98, y: 95 }, { x: 92, y: 88 }, { x: 85, y: 90 },
+                        { x: 76, y: 70 }, { x: 88, y: 82 }, { x: 90, y: 92 },
+                        { x: 65, y: 62 }, { x: 72, y: 68 }, { x: 81, y: 80 },
+                        { x: 94, y: 89 }, { x: 78, y: 71 }, { x: 86, y: 84 }
+                    ],
+                    backgroundColor: 'rgba(114, 95, 255, 0.7)',
+                    pointRadius: 6,
+                    pointHoverRadius: 8
+                }]
+            },
             options: {
-                ...chartOptions,
+                responsive: true,
+                maintainAspectRatio: false,
                 plugins: {
-                    ...chartOptions.plugins,
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            color: '#a3aed0'
+                        }
+                    },
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                return `Attendance: ${context.parsed.x}%, Performance: ${context.parsed.y}%`;
+                                return `Attendance: ${context.parsed.x}%, Score: ${context.parsed.y}%`;
                             }
                         }
                     }
                 },
                 scales: {
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Average Score (%)',
+                            color: '#a3aed0'
+                        },
+                        min: 50,
+                        max: 100,
+                        ticks: {
+                            color: '#a3aed0'
+                        },
+                        grid: {
+                            color: 'rgba(163, 174, 208, 0.1)'
+                        }
+                    },
                     x: {
-                        ...chartOptions.scales.x,
                         title: {
                             display: true,
                             text: 'Attendance Rate (%)',
                             color: '#a3aed0'
                         },
                         min: 50,
-                        max: 100
-                    },
-                    y: {
-                        ...chartOptions.scales.y,
-                        title: {
-                            display: true,
-                            text: 'Performance Score (%)',
+                        max: 100,
+                        ticks: {
                             color: '#a3aed0'
                         },
-                        min: 50,
-                        max: 100
+                        grid: {
+                            color: 'rgba(163, 174, 208, 0.1)'
+                        }
                     }
                 }
             }
         });
+    } else {
+        console.error('Performance vs attendance chart canvas not found');
     }
 }
 
 /**
- * Initialize comparison tab charts
+ * Initialize comparison charts
  */
 function initComparisonCharts() {
-    // Chart styling options
-    const chartOptions = {
-        plugins: {
-            legend: {
-                labels: {
-                    color: '#d7e1ee',
-                    font: {
-                        family: "'Poppins', sans-serif"
+    // Comparison Chart
+    const comparisonCtx = document.getElementById('comparison-chart');
+    if (comparisonCtx) {
+        new Chart(comparisonCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Attendance', 'Homework', 'Midterm', 'Final'],
+                datasets: [
+                    {
+                        label: 'Mathematics 101',
+                        data: [85, 90, 82, 88],
+                        backgroundColor: 'rgba(114, 95, 255, 0.7)'
+                    },
+                    {
+                        label: 'Science 202',
+                        data: [82, 85, 79, 81],
+                        backgroundColor: 'rgba(76, 175, 80, 0.7)'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            color: '#a3aed0'
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        min: 50,
+                        max: 100,
+                        ticks: {
+                            color: '#a3aed0'
+                        },
+                        grid: {
+                            color: 'rgba(163, 174, 208, 0.1)'
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            color: '#a3aed0'
+                        },
+                        grid: {
+                            color: 'rgba(163, 174, 208, 0.1)'
+                        }
                     }
                 }
             }
-        },
-        scales: {
-            x: {
-                grid: {
-                    color: 'rgba(255, 255, 255, 0.05)'
-                },
-                ticks: {
-                    color: '#a3aed0'
-                }
-            },
-            y: {
-                grid: {
-                    color: 'rgba(255, 255, 255, 0.05)'
-                },
-                ticks: {
-                    color: '#a3aed0'
-                },
-                beginAtZero: true
-            }
-        },
-        responsive: true,
-        maintainAspectRatio: false
-    };
-    
-    // Comparison Chart
-    const comparisonChartCtx = document.getElementById('comparison-chart');
-    if (comparisonChartCtx) {
-        // Default sample data for comparison chart
-        const comparisonData = {
-            labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5', 'Week 6', 'Week 7', 'Week 8'],
-            datasets: [
-                {
-                    label: 'Mathematics 101',
-                    data: [80, 82, 75, 85, 88, 85, 90, 89],
-                    borderColor: '#725fff',
-                    backgroundColor: 'rgba(114, 95, 255, 0.1)',
-                    tension: 0.3
-                }, 
-                {
-                    label: 'Science 202',
-                    data: [78, 75, 72, 76, 80, 75, 78, 82],
-                    borderColor: '#2196F3',
-                    backgroundColor: 'rgba(33, 150, 243, 0.1)',
-                    tension: 0.3
-                }
-            ]
-        };
-        
-        new Chart(comparisonChartCtx, {
-            type: 'line',
-            data: comparisonData,
-            options: chartOptions
         });
     }
     
     // Correlation Chart
-    const correlationChartCtx = document.getElementById('correlation-chart');
-    if (correlationChartCtx) {
-        const correlationData = {
-            labels: ['Attendance', 'Homework', 'Practice Tests', 'Study Hours', 'Group Work'],
-            datasets: [
-                {
-                    label: 'Correlation with Exam Scores',
-                    data: [0.82, 0.75, 0.90, 0.85, 0.65],
-                    backgroundColor: 'rgba(114, 95, 255, 0.7)',
-                    borderColor: '#725fff',
+    const correlationCtx = document.getElementById('correlation-chart');
+    if (correlationCtx) {
+        new Chart(correlationCtx, {
+            type: 'polarArea',
+            data: {
+                labels: ['Attendance → Grades', 'Homework → Grades', 'Attendance → Homework'],
+                datasets: [{
+                    data: [0.78, 0.82, 0.65],
+                    backgroundColor: [
+                        'rgba(114, 95, 255, 0.7)',
+                        'rgba(76, 175, 80, 0.7)',
+                        'rgba(255, 193, 7, 0.7)'
+                    ],
+                    borderColor: [
+                        'rgba(114, 95, 255, 1)',
+                        'rgba(76, 175, 80, 1)',
+                        'rgba(255, 193, 7, 1)'
+                    ],
                     borderWidth: 1
-                }
-            ]
-        };
-        
-        new Chart(correlationChartCtx, {
-            type: 'bar',
-            data: correlationData,
+                }]
+            },
             options: {
-                ...chartOptions,
+                responsive: true,
+                maintainAspectRatio: false,
                 scales: {
-                    ...chartOptions.scales,
-                    y: {
-                        ...chartOptions.scales.y,
-                        max: 1
+                    r: {
+                        beginAtZero: true,
+                        max: 1,
+                        ticks: {
+                            backdropColor: 'transparent',
+                            color: '#a3aed0'
+                        },
+                        grid: {
+                            color: 'rgba(163, 174, 208, 0.1)'
+                        }
                     }
                 },
                 plugins: {
-                    ...chartOptions.plugins,
                     legend: {
-                        display: false
+                        position: 'right',
+                        labels: {
+                            color: '#a3aed0'
+                        }
                     },
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                return `Correlation: ${context.parsed.y}`;
+                                return `Correlation: ${context.raw}`;
                             }
                         }
                     }
@@ -1421,20 +2488,20 @@ function generateRandomData(count, metricType) {
 /**
  * Update summary statistics cards
  */
-function updateSummaryStats(summary) {
+function updateSummaryStats(data) {
     // Update student stats
-    updateStatCard('total-students', summary.students.total);
-    updateStatCard('active-students', summary.students.active);
-    updateStatCard('new-enrollments', summary.students.newEnrollments);
+    updateStatCard('total-students', data.students.total);
+    updateStatCard('active-students', data.students.active);
+    updateStatCard('new-enrollments', data.students.newEnrollments);
     
     // Update attendance rate
-    updateStatCard('attendance-rate', summary.attendance.rate, '%', summary.attendance.comparison);
+    updateStatCard('attendance-rate', data.attendance.rate, '%', data.attendance.comparison);
     
     // Update exam scores
-    updateStatCard('avg-score', summary.performance.averageScore, '%', summary.performance.comparison);
+    updateStatCard('avg-score', data.performance.averageScore, '%', data.performance.comparison);
     
     // Update homework completion
-    updateStatCard('homework-completion', summary.homework.completionRate, '%', summary.homework.comparison);
+    updateStatCard('homework-completion', data.homework.completionRate, '%', data.homework.comparison);
 }
 
 /**
@@ -1616,3 +2683,2392 @@ function displayErrorMessage(message) {
         }
     }
 }
+
+/**
+ * Destroy existing chart instances before creating new ones
+ */
+function destroyExistingCharts() {
+    // List of all chart canvas IDs
+    const chartIds = [
+        'attendance-pattern-chart',
+        'attendance-by-day-chart',
+        'attendance-distribution-chart',
+        'grade-distribution-chart',
+        'subject-performance-chart',
+        'performance-attendance-chart',
+        'comparison-chart',
+        'correlation-chart'
+    ];
+    
+    // Destroy each existing chart
+    chartIds.forEach(id => {
+        const canvas = document.getElementById(id);
+        if (canvas) {
+            const chartInstance = Chart.getChart(canvas);
+            if (chartInstance) {
+                console.log(`Destroying existing chart: ${id}`);
+                chartInstance.destroy();
+            }
+        }
+    });
+}
+
+/**
+ * Initialize attendance charts
+ */
+function initAttendanceCharts() {
+    console.log('Initializing attendance charts');
+    
+    // Attendance Pattern Chart
+    if (document.getElementById('attendance-pattern-chart')) {
+        new Chart(document.getElementById('attendance-pattern-chart'), {
+            type: 'line',
+            data: {
+                labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5', 'Week 6', 'Week 7', 'Week 8'],
+                datasets: [{
+                    label: 'This Semester',
+                    data: [85, 82, 80, 78, 83, 85, 86, 88].map(v => v + Math.random() * 5 - 2.5),
+                    borderColor: '#725fff',
+                    backgroundColor: 'rgba(114, 95, 255, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }, {
+                    label: 'Previous Semester',
+                    data: [80, 78, 76, 75, 77, 79, 80, 82].map(v => v + Math.random() * 5 - 2.5),
+                    borderColor: '#2196F3',
+                    backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    borderDash: [5, 5]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { color: '#a3aed0' }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        min: 70,
+                        max: 100,
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' },
+                        ticks: { color: '#a3aed0' }
+                    },
+                    x: {
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' },
+                        ticks: { color: '#a3aed0' }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Attendance by Day Chart
+    if (document.getElementById('attendance-by-day-chart')) {
+        new Chart(document.getElementById('attendance-by-day-chart'), {
+            type: 'bar',
+            data: {
+                labels: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+                datasets: [{
+                    label: 'Attendance Rate',
+                    data: [76, 85, 89, 82, 70].map(v => v + Math.random() * 8 - 4),
+                    backgroundColor: [
+                        'rgba(114, 95, 255, 0.8)',
+                        'rgba(33, 150, 243, 0.8)',
+                        'rgba(76, 175, 80, 0.8)',
+                        'rgba(255, 152, 0, 0.8)',
+                        'rgba(244, 67, 54, 0.8)'
+                    ],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' },
+                        ticks: { 
+                            color: '#a3aed0',
+                            callback: function(value) {
+                                return value + '%';
+                            }
+                        }
+                    },
+                    x: {
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' },
+                        ticks: { color: '#a3aed0' }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Attendance Distribution Chart
+    if (document.getElementById('attendance-distribution-chart')) {
+        new Chart(document.getElementById('attendance-distribution-chart'), {
+            type: 'doughnut',
+            data: {
+                labels: ['90-100%', '80-89%', '70-79%', '60-69%', 'Below 60%'],
+                datasets: [{
+                    data: [8, 10, 6, 3, 1].map(v => v + Math.floor(Math.random() * 2)),
+                    backgroundColor: [
+                        'rgba(76, 175, 80, 0.8)',
+                        'rgba(33, 150, 243, 0.8)',
+                        'rgba(255, 152, 0, 0.8)',
+                        'rgba(255, 87, 34, 0.8)',
+                        'rgba(244, 67, 54, 0.8)'
+                    ],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: { color: '#a3aed0' }
+                    }
+                }
+            }
+        });
+    }
+}
+
+/**
+ * Initialize performance charts
+ */
+function initPerformanceCharts() {
+    console.log('Initializing performance charts');
+    
+    // Grade Distribution Chart
+    if (document.getElementById('grade-distribution-chart')) {
+        new Chart(document.getElementById('grade-distribution-chart'), {
+            type: 'bar',
+            data: {
+                labels: ['A+', 'A', 'B+', 'B', 'C+', 'C', 'D+', 'D', 'F'],
+                datasets: [{
+                    label: 'Number of Students',
+                    data: [3, 5, 7, 6, 4, 2, 1, 0, 0].map(v => v + Math.floor(Math.random() * 2)),
+                    backgroundColor: 'rgba(114, 95, 255, 0.8)',
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' },
+                        ticks: { color: '#a3aed0', precision: 0 }
+                    },
+                    x: {
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' },
+                        ticks: { color: '#a3aed0' }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Subject Performance Chart
+    if (document.getElementById('subject-performance-chart')) {
+        new Chart(document.getElementById('subject-performance-chart'), {
+            type: 'radar',
+            data: {
+                labels: ['Mathematics', 'Science', 'English', 'Social Studies', 'Computer Science'],
+                datasets: [{
+                    label: 'Average Score',
+                    data: [85, 78, 82, 76, 90].map(v => v + Math.random() * 6 - 3),
+                    backgroundColor: 'rgba(114, 95, 255, 0.2)',
+                    borderColor: '#725fff',
+                    borderWidth: 2,
+                    pointBackgroundColor: '#725fff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    r: {
+                        min: 0,
+                        max: 100,
+                        ticks: {
+                            stepSize: 20,
+                            backdropColor: 'transparent',
+                            color: '#a3aed0'
+                        },
+                        pointLabels: {
+                            color: '#a3aed0'
+                        },
+                        grid: {
+                            color: 'rgba(163, 174, 208, 0.1)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { color: '#a3aed0' }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Performance vs. Attendance Chart
+    if (document.getElementById('performance-attendance-chart')) {
+        new Chart(document.getElementById('performance-attendance-chart'), {
+            type: 'scatter',
+            data: {
+                datasets: [{
+                    label: 'Students',
+                    data: [
+                        {x: 95, y: 92}, {x: 88, y: 96}, {x: 92, y: 86},
+                        {x: 76, y: 69}, {x: 82, y: 78}, {x: 65, y: 58},
+                        {x: 78, y: 72}, {x: 86, y: 82}, {x: 94, y: 90},
+                        {x: 75, y: 68}, {x: 81, y: 76}, {x: 97, y: 94},
+                        {x: 71, y: 65}, {x: 85, y: 80}, {x: 89, y: 84},
+                        {x: 60, y: 54}
+                    ].map(point => ({
+                        x: point.x + Math.random() * 4 - 2,
+                        y: point.y + Math.random() * 4 - 2
+                    })),
+                    backgroundColor: 'rgba(114, 95, 255, 0.7)',
+                    borderColor: '#725fff',
+                    borderWidth: 1,
+                    pointRadius: 6,
+                    pointHoverRadius: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Exam Score (%)',
+                            color: '#a3aed0'
+                        },
+                        min: 50,
+                        max: 100,
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' },
+                        ticks: { color: '#a3aed0' }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Attendance Rate (%)',
+                            color: '#a3aed0'
+                        },
+                        min: 50,
+                        max: 100,
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' },
+                        ticks: { color: '#a3aed0' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+    }
+}
+
+/**
+ * Initialize comparison charts
+ */
+function initComparisonCharts() {
+    console.log('Initializing comparison charts');
+    
+    // Comparison Chart
+    if (document.getElementById('comparison-chart')) {
+        new Chart(document.getElementById('comparison-chart'), {
+            type: 'bar',
+            data: {
+                labels: ['Attendance', 'Exam Scores', 'Homework', 'Participation', 'Projects'],
+                datasets: [
+                    {
+                        label: 'Mathematics 101',
+                        data: [85, 78, 92, 87, 81].map(v => v + Math.random() * 6 - 3),
+                        backgroundColor: 'rgba(114, 95, 255, 0.8)',
+                        borderWidth: 0
+                    },
+                    {
+                        label: 'Science 202',
+                        data: [82, 80, 86, 84, 78].map(v => v + Math.random() * 6 - 3),
+                        backgroundColor: 'rgba(33, 150, 243, 0.8)',
+                        borderWidth: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { color: '#a3aed0' }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' },
+                        ticks: { color: '#a3aed0', callback: (value) => value + '%' }
+                    },
+                    x: {
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' },
+                        ticks: { color: '#a3aed0' }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Correlation Chart
+    if (document.getElementById('correlation-chart')) {
+        new Chart(document.getElementById('correlation-chart'), {
+            type: 'line',
+            data: {
+                labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                datasets: [
+                    {
+                        label: 'Attendance',
+                        data: [78, 82, 80, 85, 87, 88].map(v => v + Math.random() * 4 - 2),
+                        borderColor: '#725fff',
+                        backgroundColor: 'transparent',
+                        tension: 0.4,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Performance',
+                        data: [75, 78, 82, 84, 86, 89].map(v => v + Math.random() * 4 - 2),
+                        borderColor: '#2196F3',
+                        backgroundColor: 'transparent',
+                        tension: 0.4,
+                        yAxisID: 'y'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { color: '#a3aed0' }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Attendance & Performance Correlation',
+                        color: '#a3aed0'
+                    }
+                },
+                scales: {
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        min: 70,
+                        max: 100,
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' },
+                        ticks: { color: '#a3aed0' }
+                    },
+                    x: {
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' },
+                        ticks: { color: '#a3aed0' }
+                    }
+                }
+            }
+        });
+    }
+}
+
+/**
+ * Update summary stats with the provided data
+ */
+function updateSummaryStats(data) {
+    // Update total students
+    if (document.getElementById('total-students-stat')) {
+        document.getElementById('total-students-stat').textContent = data.totalStudents || 0;
+    }
+    
+    // Update active students
+    if (document.getElementById('active-students')) {
+        document.getElementById('active-students').textContent = `${data.activeStudents || 0} active`;
+    }
+    
+    // Update recent enrollments
+    if (document.getElementById('recent-enrollments')) {
+        document.getElementById('recent-enrollments').textContent = `${data.newEnrollments || 0} new`;
+    }
+    
+    // Update attendance rate
+    if (document.getElementById('attendance-rate-stat')) {
+        document.getElementById('attendance-rate-stat').textContent = `${data.attendanceRate || 0}%`;
+    }
+    
+    // Update attendance comparison
+    if (document.getElementById('attendance-compare')) {
+        const compElement = document.getElementById('attendance-compare');
+        const compValue = data.attendanceCompare || 0;
+        
+        compElement.textContent = `${compValue >= 0 ? '+' : ''}${compValue}% vs. average`;
+        compElement.className = `stat-comparison ${compValue < 0 ? 'negative' : ''}`;
+    }
+    
+    // Update average exam score
+    if (document.getElementById('avg-exam-score-stat')) {
+        document.getElementById('avg-exam-score-stat').textContent = `${data.avgExamScore || 0}%`;
+    }
+    
+    // Update score comparison
+    if (document.getElementById('score-compare')) {
+        const compElement = document.getElementById('score-compare');
+        const compValue = data.scoreCompare || 0;
+        
+        compElement.textContent = `${compValue >= 0 ? '+' : ''}${compValue}% vs. previous`;
+        compElement.className = `stat-comparison ${compValue < 0 ? 'negative' : ''}`;
+    }
+    
+    // Update homework completion
+    if (document.getElementById('homework-completion-stat')) {
+        document.getElementById('homework-completion-stat').textContent = `${data.homeworkCompletion || 0}%`;
+    }
+    
+    // Update homework comparison
+    if (document.getElementById('homework-compare')) {
+        const compElement = document.getElementById('homework-compare');
+        const compValue = data.homeworkCompare || 0;
+        
+        compElement.textContent = `${compValue >= 0 ? '+' : ''}${compValue}% vs. average`;
+        compElement.className = `stat-comparison ${compValue < 0 ? 'negative' : ''}`;
+    }
+}
+
+/**
+ * Load sample data when API calls fail or for demo purposes
+ */
+function loadSampleData() {
+    console.log('Loading sample data');
+    
+    // Update summary stats with sample data
+    updateSummaryStats({
+        totalStudents: 28,
+        activeStudents: 24,
+        newEnrollments: 3,
+        attendanceRate: 78,
+        attendanceCompare: 5,
+        avgExamScore: 82,
+        scoreCompare: 3,
+        homeworkCompletion: 91,
+        homeworkCompare: 1
+    });
+}
+
+// ...existing code...
+
+/**
+ * BrainDB Analytics Module
+ * Provides data visualization for student, school, and class performance metrics
+ */
+(function() {
+    // Configuration
+    const CHART_COLORS = {
+        primary: '#725fff',
+        secondary: '#4CAF50',
+        warning: '#FFC107',
+        danger: '#F44336',
+        info: '#2196F3',
+        dark: '#363c55',
+        light: '#a3aed0',
+        primaryGradient: [
+            'rgba(114, 95, 255, 0.7)',
+            'rgba(114, 95, 255, 0.4)',
+            'rgba(114, 95, 255, 0.2)'
+        ]
+    };
+    
+    // State management
+    let currentScope = 'all';
+    let currentFilters = {};
+    let chartsInitialized = false;
+    
+    // Cache for API data
+    const dataCache = {
+        students: null,
+        classes: null,
+        schools: null,
+        attendance: null,
+        exams: null,
+        homework: null
+    };
+    
+    // Chart instances
+    const charts = {};
+    
+    /**
+     * Initialize the analytics dashboard
+     */
+    async function initPage() {
+        try {
+            // Setup event listeners
+            setupEventListeners();
+            
+            // Initialize default scope filters
+            updateScopeFilters();
+            
+            // Fetch initial data and update stats
+            showLoading(true);
+            await fetchInitialData();
+            updateSummaryStats();
+            showLoading(false);
+            
+            // Initialize tab visibility
+            initTabs();
+            
+            // Initialize and render charts
+            await initializeCharts();
+            
+            console.log('Analytics page initialized successfully');
+        } catch (error) {
+            console.error('Error initializing analytics page:', error);
+            showLoading(false);
+            showError('Failed to initialize analytics. Please try refreshing the page.');
+        }
+    }
+    
+    /**
+     * Set up event listeners for UI elements
+     */
+    function setupEventListeners() {
+        // Analysis scope change
+        const scopeSelect = document.getElementById('analysis-scope');
+        if (scopeSelect) {
+            scopeSelect.addEventListener('change', function() {
+                currentScope = this.value;
+                updateScopeFilters();
+            });
+        }
+        
+        // Apply filters button
+        const applyFiltersBtn = document.getElementById('apply-filters');
+        if (applyFiltersBtn) {
+            applyFiltersBtn.addEventListener('click', async function() {
+                await applyFilters();
+            });
+        }
+        
+        // Tab switching
+        const tabItems = document.querySelectorAll('.tab-item');
+        const tabContents = document.querySelectorAll('.tab-content');
+        
+        tabItems.forEach(tab => {
+            tab.addEventListener('click', function() {
+                // Remove active class from all tabs
+                tabItems.forEach(item => item.classList.remove('active'));
+                tabContents.forEach(content => content.classList.remove('active'));
+                
+                // Add active class to clicked tab
+                this.classList.add('active');
+                
+                // Show corresponding content
+                const tabId = this.getAttribute('data-tab');
+                document.getElementById(tabId + '-tab').classList.add('active');
+                
+                // Update charts in the active tab for better rendering
+                updateChartsInActiveTab(tabId);
+            });
+        });
+        
+        // Comparison run button
+        const runComparisonBtn = document.getElementById('run-comparison');
+        if (runComparisonBtn) {
+            runComparisonBtn.addEventListener('click', function() {
+                runComparison();
+            });
+        }
+    }
+    
+    /**
+     * Update scope filter options based on selection
+     */
+    function updateScopeFilters() {
+        const scope = document.getElementById('analysis-scope').value;
+        const container = document.getElementById('scope-filter-container');
+        
+        let filterHTML = '';
+        
+        switch(scope) {
+            case 'by-class':
+                filterHTML = `
+                    <label class="filter-label">Select Class</label>
+                    <select class="filter-select" id="class-filter">
+                        <option value="all">All Classes</option>
+                        <option value="math-101">Mathematics 101</option>
+                        <option value="science-202">Science 202</option>
+                        <option value="english-101">English 101</option>
+                        <option value="history-101">History 101</option>
+                        <option value="cs-202">Computer Science 202</option>
+                    </select>
+                    <div class="filter-label" style="margin-top: 10px;">Lecture Sequence View</div>
+                    <div class="toggle-container">
+                        <input type="checkbox" id="lecture-sequence-toggle" class="toggle-input">
+                        <label for="lecture-sequence-toggle" class="toggle-label"></label>
+                        <span class="toggle-text">Show lecture progression</span>
+                    </div>
+                `;
+                break;
+                
+            case 'by-student':
+                filterHTML = `
+                    <label class="filter-label">Select Student</label>
+                    <select class="filter-select" id="student-filter">
+                        <option value="all">All Students</option>
+                        <option value="student-1">Kim Min-ji</option>
+                        <option value="student-2">Park Ji-hun</option>
+                        <option value="student-3">Lee Seo-yeon</option>
+                        <option value="student-4">Han So-mi</option>
+                        <option value="student-5">Kang Tae-woo</option>
+                    </select>
+                    <div class="filter-label" style="margin-top: 10px;">Semester Selection</div>
+                    <div class="multi-select-container" style="max-height: 120px">
+                        <div class="multi-select-item">
+                            <input type="checkbox" id="sem-2025-1" checked>
+                            <label for="sem-2025-1">2025 Spring</label>
+                        </div>
+                        <div class="multi-select-item">
+                            <input type="checkbox" id="sem-2024-2">
+                            <label for="sem-2024-2">2024 Fall</label>
+                        </div>
+                        <div class="multi-select-item">
+                            <input type="checkbox" id="sem-2024-1">
+                            <label for="sem-2024-1">2024 Spring</label>
+                        </div>
+                        <div class="multi-select-item">
+                            <input type="checkbox" id="sem-2023-2">
+                            <label for="sem-2023-2">2023 Fall</label>
+                        </div>
+                    </div>
+                `;
+                break;
+                
+            case 'by-school':
+                filterHTML = `
+                    <label class="filter-label">Select School</label>
+                    <select class="filter-select" id="school-filter">
+                        <option value="all">All Schools</option>
+                        <option value="school-1">Seoul International</option>
+                        <option value="school-2">Busan Academy</option>
+                        <option value="school-3">Daegu High School</option>
+                    </select>
+                    <div class="filter-label" style="margin-top: 10px;">Generation</div>
+                    <select class="filter-select" id="generation-filter">
+                        <option value="all">All Generations</option>
+                        <option value="2025">2025</option>
+                        <option value="2024">2024</option>
+                        <option value="2023">2023</option>
+                        <option value="2022">2022</option>
+                    </select>
+                `;
+                break;
+                
+            default:
+                filterHTML = '<p class="filter-label">No additional filters needed</p>';
+        }
+        
+        container.innerHTML = filterHTML;
+        
+        // Set up any additional event listeners for new elements
+        if (scope === 'by-class') {
+            const lectureToggle = document.getElementById('lecture-sequence-toggle');
+            if (lectureToggle) {
+                lectureToggle.addEventListener('change', function() {
+                    if (this.checked) {
+                        // Show lecture sequence specific charts
+                        showLectureSequenceView();
+                    } else {
+                        // Show regular class view
+                        showRegularClassView();
+                    }
+                });
+            }
+        }
+    }
+    
+    /**
+     * Show lecture sequence specific charts
+     */
+    function showLectureSequenceView() {
+        // Add a custom section for lecture sequence if not exists
+        if (!document.getElementById('lecture-sequence-view')) {
+            const parentTab = document.getElementById('attendance-tab');
+            
+            if (parentTab) {
+                // Create a new section for lecture sequence charts
+                const lectureSequenceView = document.createElement('div');
+                lectureSequenceView.id = 'lecture-sequence-view';
+                lectureSequenceView.className = 'chart-row';
+                lectureSequenceView.innerHTML = `
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <div class="chart-title">Attendance by Lecture</div>
+                        </div>
+                        <div class="chart-body">
+                            <canvas id="lecture-attendance-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <div class="chart-title">Performance by Lecture</div>
+                        </div>
+                        <div class="chart-body">
+                            <canvas id="lecture-performance-chart"></canvas>
+                        </div>
+                    </div>
+                `;
+                
+                // Insert before the first chart row
+                const firstChartRow = parentTab.querySelector('.chart-row');
+                if (firstChartRow) {
+                    parentTab.insertBefore(lectureSequenceView, firstChartRow);
+                } else {
+                    parentTab.appendChild(lectureSequenceView);
+                }
+                
+                // Initialize the lecture sequence charts
+                initLectureSequenceCharts();
+            }
+        } else {
+            document.getElementById('lecture-sequence-view').style.display = 'grid';
+        }
+    }
+    
+    /**
+     * Hide lecture sequence specific charts
+     */
+    function showRegularClassView() {
+        const lectureSequenceView = document.getElementById('lecture-sequence-view');
+        if (lectureSequenceView) {
+            lectureSequenceView.style.display = 'none';
+        }
+    }
+    
+    /**
+     * Initialize charts for lecture sequence view
+     */
+    function initLectureSequenceCharts() {
+        // Lecture attendance chart
+        const lectureAttendanceCtx = document.getElementById('lecture-attendance-chart');
+        if (lectureAttendanceCtx) {
+            new Chart(lectureAttendanceCtx, {
+                type: 'line',
+                data: {
+                    labels: ['Lecture 1', 'Lecture 2', 'Lecture 3', 'Lecture 4', 'Lecture 5', 'Lecture 6', 'Lecture 7', 'Lecture 8'],
+                    datasets: [{
+                        label: 'Attendance Rate',
+                        data: [95, 90, 85, 88, 92, 86, 89, 91],
+                        borderColor: '#4CAF50',
+                        backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { color: '#a3aed0' }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `Attendance: ${context.parsed.y}%`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            min: 50,
+                            max: 100,
+                            ticks: { 
+                                color: '#a3aed0',
+                                callback: value => value + '%'
+                            },
+                            grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                        },
+                        x: {
+                            ticks: { color: '#a3aed0' },
+                            grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Lecture performance chart
+        const lecturePerformanceCtx = document.getElementById('lecture-performance-chart');
+        if (lecturePerformanceCtx) {
+            new Chart(lecturePerformanceCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Quiz 1', 'Quiz 2', 'Midterm', 'Quiz 3', 'Quiz 4', 'Final'],
+                    datasets: [{
+                        label: 'Average Score',
+                        data: [78, 82, 76, 85, 88, 80],
+                        backgroundColor: 'rgba(114, 95, 255, 0.7)',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { color: '#a3aed0' }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `Average: ${context.parsed.y}%`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            min: 50,
+                            max: 100,
+                            ticks: { 
+                                color: '#a3aed0',
+                                callback: value => value + '%'
+                            },
+                            grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                        },
+                        x: {
+                            ticks: { color: '#a3aed0' },
+                            grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                        }
+                    }
+                }
+            });
+        }
+    }
+    
+    /**
+     * Initialize and render all charts
+     */
+    async function initializeCharts() {
+        if (chartsInitialized) {
+            return;
+        }
+        
+        try {
+            // Load Chart.js from CDN if needed
+            await loadChartJsIfNeeded();
+            
+            // Initialize attendance charts
+            initAttendanceCharts();
+            
+            // Initialize performance charts
+            initPerformanceCharts();
+            
+            // Initialize comment analysis charts
+            initCommentCharts();
+            
+            // Initialize comparison chart
+            initComparisonChart();
+            
+            chartsInitialized = true;
+            
+        } catch (error) {
+            console.error('Error initializing charts:', error);
+            showError('Failed to initialize charts. Please try refreshing the page.');
+        }
+    }
+    
+    /**
+     * Load Chart.js from CDN if it's not already loaded
+     */
+    async function loadChartJsIfNeeded() {
+        return new Promise((resolve, reject) => {
+            // Check if Chart is already defined
+            if (window.Chart) {
+                resolve();
+                return;
+            }
+            
+            // Load Chart.js from CDN
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js';
+            script.async = true;
+            
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error('Failed to load Chart.js'));
+            
+            document.head.appendChild(script);
+        });
+    }
+    
+    /**
+     * Initialize tabs visibility
+     */
+    function initTabs() {
+        const tabItems = document.querySelectorAll('.tab-item');
+        const tabContents = document.querySelectorAll('.tab-content');
+        
+        // Set initial state - first tab active
+        if (tabItems.length > 0) {
+            tabItems[0].classList.add('active');
+        }
+        
+        if (tabContents.length > 0) {
+            tabContents[0].classList.add('active');
+        }
+    }
+    
+    /**
+     * Initialize attendance analysis charts
+     */
+    function initAttendanceCharts() {
+        // Attendance patterns chart (line chart)
+        const attendancePatternCtx = document.getElementById('attendance-pattern-chart');
+        if (attendancePatternCtx) {
+            charts.attendancePattern = new Chart(attendancePatternCtx, {
+                type: 'line',
+                data: {
+                    labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5', 'Week 6', 'Week 7', 'Week 8'],
+                    datasets: [{
+                        label: 'Weekly Attendance',
+                        data: [92, 88, 85, 86, 90, 89, 91, 93],
+                        borderColor: CHART_COLORS.primary,
+                        backgroundColor: 'rgba(114, 95, 255, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { color: CHART_COLORS.light }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `Attendance: ${context.parsed.y}%`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            min: 50,
+                            max: 100,
+                            ticks: { 
+                                color: CHART_COLORS.light,
+                                callback: value => value + '%'
+                            },
+                            grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                        },
+                        x: {
+                            ticks: { color: CHART_COLORS.light },
+                            grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Attendance by day chart (bar chart)
+        const attendanceByDayCtx = document.getElementById('attendance-by-day-chart');
+        if (attendanceByDayCtx) {
+            charts.attendanceByDay = new Chart(attendanceByDayCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+                    datasets: [{
+                        label: 'Attendance by Day',
+                        data: [82, 88, 90, 86, 78],
+                        backgroundColor: CHART_COLORS.primaryGradient,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { color: CHART_COLORS.light }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `Attendance: ${context.parsed.y}%`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            min: 50,
+                            max: 100,
+                            ticks: { 
+                                color: CHART_COLORS.light,
+                                callback: value => value + '%'
+                            },
+                            grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                        },
+                        x: {
+                            ticks: { color: CHART_COLORS.light },
+                            grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Attendance distribution chart (doughnut chart)
+        const attendanceDistributionCtx = document.getElementById('attendance-distribution-chart');
+        if (attendanceDistributionCtx) {
+            charts.attendanceDistribution = new Chart(attendanceDistributionCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Present', 'Absent', 'Late', 'Excused'],
+                    datasets: [{
+                        data: [78, 8, 10, 4],
+                        backgroundColor: [
+                            CHART_COLORS.secondary,
+                            CHART_COLORS.danger,
+                            CHART_COLORS.warning,
+                            CHART_COLORS.info
+                        ],
+                        borderWidth: 0,
+                        hoverOffset: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: { color: CHART_COLORS.light }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const value = context.parsed;
+                                    const label = context.label;
+                                    return `${label}: ${value}%`;
+                                }
+                            }
+                        }
+                    },
+                    cutout: '70%'
+                }
+            });
+        }
+    }
+    
+    /**
+     * Initialize performance analysis charts
+     */
+    function initPerformanceCharts() {
+        // Grade distribution chart (bar chart)
+        const gradeDistributionCtx = document.getElementById('grade-distribution-chart');
+        if (gradeDistributionCtx) {
+            charts.gradeDistribution = new Chart(gradeDistributionCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['A', 'B', 'C', 'D', 'F'],
+                    datasets: [{
+                        label: 'Grade Distribution',
+                        data: [35, 42, 15, 6, 2],
+                        backgroundColor: [
+                            'rgba(76, 175, 80, 0.7)',
+                            'rgba(33, 150, 243, 0.7)',
+                            'rgba(255, 193, 7, 0.7)',
+                            'rgba(255, 152, 0, 0.7)',
+                            'rgba(244, 67, 54, 0.7)'
+                        ],
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `Students: ${context.parsed.y}%`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            ticks: { 
+                                color: CHART_COLORS.light,
+                                callback: value => value + '%'
+                            },
+                            grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                        },
+                        x: {
+                            ticks: { color: CHART_COLORS.light },
+                            grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Subject performance chart (radar chart)
+        const subjectPerformanceCtx = document.getElementById('subject-performance-chart');
+        if (subjectPerformanceCtx) {
+            charts.subjectPerformance = new Chart(subjectPerformanceCtx, {
+                type: 'radar',
+                data: {
+                    labels: ['Mathematics', 'Science', 'English', 'History', 'Computer Science'],
+                    datasets: [{
+                        label: 'Average Performance',
+                        data: [85, 78, 82, 75, 88],
+                        backgroundColor: 'rgba(114, 95, 255, 0.3)',
+                        borderColor: CHART_COLORS.primary,
+                        pointBackgroundColor: CHART_COLORS.primary,
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: CHART_COLORS.primary
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { color: CHART_COLORS.light }
+                        }
+                    },
+                    scales: {
+                        r: {
+                            angleLines: {
+                                color: 'rgba(163, 174, 208, 0.1)'
+                            },
+                            grid: {
+                                color: 'rgba(163, 174, 208, 0.1)'
+                            },
+                            pointLabels: {
+                                color: CHART_COLORS.light
+                            },
+                            ticks: {
+                                color: CHART_COLORS.light,
+                                backdropColor: 'transparent',
+                                showLabelBackdrop: false
+                            }
+                        }
+                    },
+                    elements: {
+                        line: {
+                            borderWidth: 2
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Performance vs attendance chart (scatter chart)
+        const performanceAttendanceCtx = document.getElementById('performance-attendance-chart');
+        if (performanceAttendanceCtx) {
+            charts.performanceAttendance = new Chart(performanceAttendanceCtx, {
+                type: 'scatter',
+                data: {
+                    datasets: [{
+                        label: 'Students',
+                        data: [
+                            { x: 95, y: 92 },
+                            { x: 88, y: 85 },
+                            { x: 75, y: 68 },
+                            { x: 82, y: 76 },
+                            { x: 90, y: 82 },
+                            { x: 72, y: 65 },
+                            { x: 98, y: 94 },
+                            { x: 85, y: 77 },
+                            { x: 91, y: 86 },
+                            { x: 79, y: 72 },
+                            { x: 95, y: 89 },
+                            { x: 65, y: 60 },
+                            { x: 80, y: 74 },
+                            { x: 85, y: 84 },
+                            { x: 92, y: 88 }
+                        ],
+                        backgroundColor: 'rgba(114, 95, 255, 0.7)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `Attendance: ${context.parsed.x}%, Score: ${context.parsed.y}%`;
+                                }
+                            }
+                        },
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Exam Score (%)',
+                                color: CHART_COLORS.light
+                            },
+                            min: 50,
+                            max: 100,
+                            ticks: { color: CHART_COLORS.light },
+                            grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Attendance Rate (%)',
+                                color: CHART_COLORS.light
+                            },
+                            min: 50,
+                            max: 100,
+                            ticks: { color: CHART_COLORS.light },
+                            grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                        }
+                    }
+                }
+            });
+        }
+    }
+    
+    /**
+     * Initialize comment analysis charts
+     */
+    function initCommentCharts() {
+        // Comment classification chart (pie chart)
+        const commentClassificationCtx = document.getElementById('comment-classification-chart');
+        if (commentClassificationCtx) {
+            charts.commentClassification = new Chart(commentClassificationCtx, {
+                type: 'pie',
+                data: {
+                    labels: ['Positive Feedback', 'Needs Improvement', 'Constructive Criticism', 'General Observations'],
+                    datasets: [{
+                        data: [45, 23, 37, 19],
+                        backgroundColor: [
+                            CHART_COLORS.secondary,
+                            CHART_COLORS.danger,
+                            CHART_COLORS.info,
+                            CHART_COLORS.warning
+                        ],
+                        borderWidth: 0,
+                        hoverOffset: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: CHART_COLORS.light }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Comment keywords chart (horizontal bar chart)
+        const commentKeywordsCtx = document.getElementById('comment-keywords-chart');
+        if (commentKeywordsCtx) {
+            charts.commentKeywords = new Chart(commentKeywordsCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Understanding', 'Clear', 'Improvement', 'Practice', 'Good', 'Review', 'Concept', 'Effort', 'Detailed', 'Attention'],
+                    datasets: [{
+                        axis: 'y',
+                        label: 'Frequency',
+                        data: [48, 42, 38, 35, 32, 30, 28, 25, 22, 18],
+                        backgroundColor: 'rgba(114, 95, 255, 0.7)',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            ticks: { color: CHART_COLORS.light },
+                            grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                        },
+                        x: {
+                            ticks: { color: CHART_COLORS.light },
+                            grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                        }
+                    }
+                }
+            });
+        }
+    }
+    
+    /**
+     * Initialize comparison chart
+     */
+    function initComparisonChart() {
+        // Comparison chart (grouped bar chart)
+        const comparisonChartCtx = document.getElementById('comparison-chart');
+        if (comparisonChartCtx) {
+            charts.comparison = new Chart(comparisonChartCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Attendance', 'Exam Scores', 'Homework Completion'],
+                    datasets: [
+                        {
+                            label: 'Mathematics 101',
+                            data: [85, 82, 90],
+                            backgroundColor: 'rgba(114, 95, 255, 0.7)',
+                            borderRadius: 4
+                        },
+                        {
+                            label: 'Science 202',
+                            data: [80, 78, 85],
+                            backgroundColor: 'rgba(33, 150, 243, 0.7)',
+                            borderRadius: 4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { color: CHART_COLORS.light }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            min: 0,
+                            max: 100,
+                            ticks: { 
+                                color: CHART_COLORS.light,
+                                callback: value => value + '%'
+                            },
+                            grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                        },
+                        x: {
+                            ticks: { color: CHART_COLORS.light },
+                            grid: { color: 'rgba(163, 174, 208, 0.1)' }
+                        }
+                    }
+                }
+            });
+        }
+    }
+    
+    /**
+     * Update charts in the active tab
+     * This is needed for proper chart rendering
+     */
+    function updateChartsInActiveTab(tabId) {
+        if (!charts) return;
+        
+        switch(tabId) {
+            case 'attendance':
+                if (charts.attendancePattern) charts.attendancePattern.update();
+                if (charts.attendanceByDay) charts.attendanceByDay.update();
+                if (charts.attendanceDistribution) charts.attendanceDistribution.update();
+                break;
+                
+            case 'performance':
+                if (charts.gradeDistribution) charts.gradeDistribution.update();
+                if (charts.subjectPerformance) charts.subjectPerformance.update();
+                if (charts.performanceAttendance) charts.performanceAttendance.update();
+                break;
+                
+            case 'comments':
+                if (charts.commentClassification) charts.commentClassification.update();
+                if (charts.commentKeywords) charts.commentKeywords.update();
+                break;
+                
+            case 'comparison':
+                if (charts.comparison) charts.comparison.update();
+                break;
+        }
+    }
+    
+    /**
+     * Fetch initial data
+     */
+    async function fetchInitialData() {
+        try {
+            // In a real app, these would be API calls to your backend
+            // For now, we'll use dummy data
+            
+            // Simulating API delay
+            await new Promise(resolve => setTimeout(resolve, 800));
+            
+            // Load student data
+            dataCache.students = [
+                { id: 'S1', name: 'Kim Min-ji', school: 'Seoul International', status: 'active' },
+                { id: 'S2', name: 'Park Ji-hun', school: 'Busan Academy', status: 'active' },
+                { id: 'S3', name: 'Lee Seo-yeon', school: 'Daegu High School', status: 'inactive' },
+                // Additional student data would be here
+            ];
+            
+            // Load class data
+            dataCache.classes = [
+                { id: 'C1', name: 'Mathematics 101', school: 'Seoul International', status: 'active' },
+                { id: 'C2', name: 'Science 202', school: 'Busan Academy', status: 'active' },
+                { id: 'C3', name: 'English 101', school: 'Daegu High School', status: 'active' },
+                // Additional class data would be here
+            ];
+            
+            // Load school data
+            dataCache.schools = [
+                { id: 'SC1', name: 'Seoul International', location: 'Seoul', status: 'active' },
+                { id: 'SC2', name: 'Busan Academy', location: 'Busan', status: 'active' },
+                { id: 'SC3', name: 'Daegu High School', location: 'Daegu', status: 'active' },
+                // Additional school data would be here
+            ];
+            
+            // Load attendance data
+            dataCache.attendance = generateAttendanceData();
+            
+            // Load exam data
+            dataCache.exams = generateExamData();
+            
+            // Load homework data
+            dataCache.homework = generateHomeworkData();
+            
+            return true;
+            
+        } catch (error) {
+            console.error('Error fetching initial data:', error);
+            showError('Failed to fetch data. Please try refreshing the page.');
+            return false;
+        }
+    }
+    
+    /**
+     * Generate dummy attendance data for demo purposes
+     */
+    function generateAttendanceData() {
+        const students = ['S1', 'S2', 'S3', 'S4', 'S5'];
+        const classes = ['C1', 'C2', 'C3'];
+        const status = ['present', 'absent', 'late', 'excused'];
+        const result = [];
+        
+        // Generate random attendance data for each student and class
+        for (let student of students) {
+            for (let classId of classes) {
+                for (let week = 1; week <= 8; week++) {
+                    // Weight towards 'present' status
+                    const randomStatus = Math.random() < 0.8 ? status[0] : status[Math.floor(Math.random() * status.length)];
+                    
+                    result.push({
+                        student_id: student,
+                        class_id: classId,
+                        week: week,
+                        status: randomStatus,
+                        date: `2023-${Math.floor(Math.random() * 3) + 9}-${Math.floor(Math.random() * 28) + 1}`
+                    });
+                }
+            }
+        }
+        
+        return result;
+    }
+    
+    /**
+     * Generate dummy exam data for demo purposes
+     */
+    function generateExamData() {
+        const students = ['S1', 'S2', 'S3', 'S4', 'S5'];
+        const classes = ['C1', 'C2', 'C3'];
+        const subjects = ['Mathematics', 'Science', 'English', 'History', 'Computer Science'];
+        const result = [];
+        
+        // Generate random exam data for each student and subject
+        for (let student of students) {
+            for (let classId of classes) {
+                for (let subject of subjects) {
+                    const score = Math.floor(Math.random() * 31) + 70; // Score between 70-100
+                    
+                    // Generate a comment based on the score
+                    let comment = '';
+                    if (score >= 90) {
+                        comment = 'Excellent understanding of concepts. Great work!';
+                    } else if (score >= 80) {
+                        comment = 'Good performance. Shows strong grasp of material.';
+                    } else if (score >= 70) {
+                        comment = 'Satisfactory work, but could improve in certain areas.';
+                    } else {
+                        comment = 'Needs additional review and practice.';
+                    }
+                    
+                    result.push({
+                        student_id: student,
+                        class_id: classId,
+                        subject: subject,
+                        score: score,
+                        comment: comment,
+                        date: `2023-${Math.floor(Math.random() * 3) + 9}-${Math.floor(Math.random() * 28) + 1}`
+                    });
+                }
+            }
+        }
+        
+        return result;
+    }
+    
+    /**
+     * Generate dummy homework data for demo purposes
+     */
+    function generateHomeworkData() {
+        const students = ['S1', 'S2', 'S3', 'S4', 'S5'];
+        const classes = ['C1', 'C2', 'C3'];
+        const status = ['completed', 'incomplete', 'late'];
+        const result = [];
+        
+        // Generate random homework data for each student and class
+        for (let student of students) {
+            for (let classId of classes) {
+                for (let week = 1; week <= 8; week++) {
+                    // Weight towards 'completed' status
+                    const randomStatus = Math.random() < 0.85 ? status[0] : status[Math.floor(Math.random() * status.length)];
+                    const score = randomStatus === 'completed' ? Math.floor(Math.random() * 31) + 70 : Math.floor(Math.random() * 70);
+                    
+                    result.push({
+                        student_id: student,
+                        class_id: classId,
+                        week: week,
+                        status: randomStatus,
+                        score: score,
+                        date: `2023-${Math.floor(Math.random() * 3) + 9}-${Math.floor(Math.random() * 28) + 1}`
+                    });
+                }
+            }
+        }
+        
+        return result;
+    }
+    
+    /**
+     * Update summary stats in the dashboard
+     */
+    function updateSummaryStats() {
+        // Total students
+        const totalStudentsElement = document.getElementById('total-students-stat');
+        if (totalStudentsElement && dataCache.students) {
+            totalStudentsElement.textContent = dataCache.students.length;
+        }
+        
+        // Active students
+        const activeStudentsElement = document.getElementById('active-students');
+        if (activeStudentsElement && dataCache.students) {
+            const activeCount = dataCache.students.filter(s => s.status === 'active').length;
+            activeStudentsElement.textContent = `${activeCount} active`;
+        }
+        
+        // Attendance rate
+        const attendanceRateElement = document.getElementById('attendance-rate-stat');
+        if (attendanceRateElement && dataCache.attendance) {
+            const presentCount = dataCache.attendance.filter(a => a.status === 'present').length;
+            const totalCount = dataCache.attendance.length;
+            const rate = Math.round((presentCount / totalCount) * 100);
+            attendanceRateElement.textContent = `${rate}%`;
+        }
+        
+        // Average exam score
+        const avgExamScoreElement = document.getElementById('avg-exam-score-stat');
+        if (avgExamScoreElement && dataCache.exams) {
+            const totalScore = dataCache.exams.reduce((sum, exam) => sum + exam.score, 0);
+            const avgScore = Math.round(totalScore / dataCache.exams.length);
+            avgExamScoreElement.textContent = `${avgScore}%`;
+        }
+        
+        // Homework completion rate
+        const homeworkCompletionElement = document.getElementById('homework-completion-stat');
+        if (homeworkCompletionElement && dataCache.homework) {
+            const completedCount = dataCache.homework.filter(hw => hw.status === 'completed').length;
+            const totalCount = dataCache.homework.length;
+            const rate = Math.round((completedCount / totalCount) * 100);
+            homeworkCompletionElement.textContent = `${rate}%`;
+        }
+    }
+    
+    /**
+     * Apply selected filters and update data
+     */
+    async function applyFilters() {
+        try {
+            showLoading(true);
+            
+            // Get selected scope and filters
+            const scope = document.getElementById('analysis-scope').value;
+            const timePeriod = document.getElementById('time-period').value;
+            
+            // Collect additional filters based on scope
+            let additionalFilters = {};
+            
+            switch(scope) {
+                case 'by-class':
+                    const classFilter = document.getElementById('class-filter');
+                    if (classFilter) {
+                        additionalFilters.class = classFilter.value;
+                    }
+                    break;
+                    
+                case 'by-student':
+                    const studentFilter = document.getElementById('student-filter');
+                    if (studentFilter) {
+                        additionalFilters.student = studentFilter.value;
+                    }
+                    
+                    // Get selected semesters
+                    const selectedSemesters = [];
+                    document.querySelectorAll('.multi-select-item input[type="checkbox"]:checked').forEach(checkbox => {
+                        selectedSemesters.push(checkbox.id);
+                    });
+                    additionalFilters.semesters = selectedSemesters;
+                    break;
+                    
+                case 'by-school':
+                    const schoolFilter = document.getElementById('school-filter');
+                    if (schoolFilter) {
+                        additionalFilters.school = schoolFilter.value;
+                    }
+                    
+                    const generationFilter = document.getElementById('generation-filter');
+                    if (generationFilter) {
+                        additionalFilters.generation = generationFilter.value;
+                    }
+                    break;
+            }
+            
+            // Store current filters
+            currentFilters = {
+                scope: scope,
+                timePeriod: timePeriod,
+                ...additionalFilters
+            };
+            
+            // Update data based on filters
+            await updateDataWithFilters(currentFilters);
+            
+            // Update UI elements
+            updateChartsWithFilteredData();
+            updateSummaryStats();
+            
+            showLoading(false);
+            
+        } catch (error) {
+            console.error('Error applying filters:', error);
+            showError('Failed to apply filters. Please try again.');
+            showLoading(false);
+        }
+    }
+    
+    /**
+     * Update data with the applied filters (dummy implementation)
+     */
+    async function updateDataWithFilters(filters) {
+        // In a real application, this would make API calls with the filters
+        // For now, we'll just simulate a delay and return existing data
+        
+        // Simulating API delay
+        await new Promise(resolve => setTimeout(resolve, 800));
+        
+        // For now, we just log the filters
+        console.log('Applied filters:', filters);
+        
+        return true;
+    }
+    
+    /**
+     * Update charts with the filtered data
+     */
+    function updateChartsWithFilteredData() {
+        // In a real application, this would update all chart data
+        // For now, we'll just simulate with random data updates
+        
+        // Update attendance pattern chart with random data
+        if (charts.attendancePattern) {
+            const newData = Array(8).fill(0).map(() => Math.floor(Math.random() * 15) + 80);
+            charts.attendancePattern.data.datasets[0].data = newData;
+            charts.attendancePattern.update();
+        }
+        
+        // Update other charts similarly
+        // This is just a placeholder for demonstration
+        
+        console.log('Charts updated with filtered data');
+    }
+    
+    /**
+     * Run the comparison analysis
+     */
+    function runComparison() {
+        try {
+            showLoading(true);
+            
+            // Get comparison parameters
+            const comparisonType = document.getElementById('comparison-type').value;
+            const comparisonMetric = document.getElementById('comparison-metric').value;
+            
+            // Get selected items for comparison
+            const selectedItems = [];
+            document.querySelectorAll('#comparison-items input[type="checkbox"]:checked').forEach(checkbox => {
+                selectedItems.push(checkbox.id);
+            });
+            
+            // Update comparison chart with new data
+            updateComparisonChart(comparisonType, comparisonMetric, selectedItems);
+            
+            // Update stats table
+            updateStatsTable(comparisonType, comparisonMetric, selectedItems);
+            
+            showLoading(false);
+            
+        } catch (error) {
+            console.error('Error running comparison:', error);
+            showError('Failed to run comparison. Please try again.');
+            showLoading(false);
+        }
+    }
+    
+    /**
+     * Update the comparison chart with new data
+     */
+    function updateComparisonChart(comparisonType, metric, selectedItems) {
+        if (!charts.comparison) return;
+        
+        // In a real app, this would fetch data based on the selection
+        // For now, we'll simulate with random data
+        
+        // Generate labels and datasets based on comparison type
+        let labels = [];
+        let datasets = [];
+        
+        // Set appropriate labels based on the selected metric
+        switch(metric) {
+            case 'attendance':
+                labels = ['Overall', 'On-time', 'Late', 'Absent'];
+                break;
+                
+            case 'exam-scores':
+                labels = ['Average', 'Midterm', 'Final', 'Quizzes'];
+                break;
+                
+            case 'homework':
+                labels = ['Completion', 'On-time', 'Quality', 'Timeliness'];
+                break;
+                
+            case 'improvement':
+                labels = ['Start', 'Mid-term', 'End-term', 'Overall'];
+                break;
+        }
+        
+        // Create datasets for each selected item
+        const items = ['Mathematics 101', 'Science 202', 'English 101', 'History 101', 'Computer Science 202'];
+        
+        // Use only the selected items
+        const selectedIndices = selectedItems.map(item => parseInt(item.replace('item', '')) - 1);
+        
+        // Create color array for datasets
+        const colors = [
+            'rgba(114, 95, 255, 0.7)',
+            'rgba(33, 150, 243, 0.7)',
+            'rgba(76, 175, 80, 0.7)',
+            'rgba(255, 152, 0, 0.7)',
+            'rgba(244, 67, 54, 0.7)'
+        ];
+        
+        // Generate datasets for selected items
+        datasets = selectedIndices.map((index, i) => {
+            return {
+                label: items[index],
+                data: Array(labels.length).fill(0).map(() => Math.floor(Math.random() * 20) + 70),
+                backgroundColor: colors[i % colors.length],
+                borderRadius: 4
+            };
+        });
+        
+        // Update the chart
+        charts.comparison.data.labels = labels;
+        charts.comparison.data.datasets = datasets;
+        charts.comparison.update();
+    }
+    
+    /**
+     * Update the statistical analysis table
+     */
+    function updateStatsTable(comparisonType, metric, selectedItems) {
+        const statsTable = document.getElementById('stats-table');
+        if (!statsTable) return;
+        
+        // Clear existing rows
+        statsTable.innerHTML = '';
+        
+        // In a real app, this would show actual statistical analysis
+        // For now, we'll create dummy data
+        
+        // Use only the selected items
+        const items = ['Mathematics 101', 'Science 202', 'English 101', 'History 101', 'Computer Science 202'];
+        const selectedIndices = selectedItems.map(item => parseInt(item.replace('item', '')) - 1);
+        
+        // Create a row for each selected item
+        selectedIndices.forEach(index => {
+            const tr = document.createElement('tr');
+            
+            // Item name
+            const tdName = document.createElement('td');
+            tdName.textContent = items[index];
+            tr.appendChild(tdName);
+            
+            // Average
+            const tdAvg = document.createElement('td');
+            tdAvg.textContent = (Math.floor(Math.random() * 15) + 75) + '%';
+            tr.appendChild(tdAvg);
+            
+            // Median
+            const tdMedian = document.createElement('td');
+            tdMedian.textContent = (Math.floor(Math.random() * 15) + 75) + '%';
+            tr.appendChild(tdMedian);
+            
+            // Standard Deviation
+            const tdStdDev = document.createElement('td');
+            tdStdDev.textContent = (Math.floor(Math.random() * 10) + 1).toFixed(1);
+            tr.appendChild(tdStdDev);
+            
+            // Min
+            const tdMin = document.createElement('td');
+            tdMin.textContent = (Math.floor(Math.random() * 10) + 60) + '%';
+            tr.appendChild(tdMin);
+            
+            // Max
+            const tdMax = document.createElement('td');
+            tdMax.textContent = (Math.floor(Math.random() * 10) + 90) + '%';
+            tr.appendChild(tdMax);
+            
+            // Add row to table
+            statsTable.appendChild(tr);
+        });
+    }
+    
+    /**
+     * Show or hide the loading indicator
+     */
+    function showLoading(show) {
+        const loadingIndicator = document.getElementById('analytics-loading-indicator');
+        if (loadingIndicator) {
+            loadingIndicator.style.display = show ? 'flex' : 'none';
+        }
+    }
+    
+    /**
+     * Show an error message
+     */
+    function showError(message) {
+        // In a real application, this would display a proper error message
+        // For now, we'll just log to console
+        console.error(message);
+        alert(message);
+    }
+    
+    // Wait for DOM to be fully loaded, then initialize
+    document.addEventListener('DOMContentLoaded', initPage);
+})();
+
+/**
+ * Initialize comment analysis charts and tables
+ */
+function initCommentCharts() {
+    console.log('Initializing comment analysis charts');
+    
+    // Comment sentiment distribution chart
+    const sentimentChartCtx = document.getElementById('comment-sentiment-chart');
+    if (sentimentChartCtx) {
+        new Chart(sentimentChartCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Positive', 'Neutral', 'Negative'],
+                datasets: [{
+                    data: [65, 25, 10],
+                    backgroundColor: [
+                        'rgba(76, 175, 80, 0.8)',
+                        'rgba(255, 193, 7, 0.8)',
+                        'rgba(244, 67, 54, 0.8)'
+                    ],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: { color: '#a3aed0' }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Comment keywords chart
+    const keywordsChartCtx = document.getElementById('comment-keywords-chart');
+    if (keywordsChartCtx) {
+        new Chart(keywordsChartCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Understanding', 'Homework', 'Difficulty', 'Interesting', 'Help', 'Concept', 'Practice', 'Exam', 'Clear', 'Confused'],
+                datasets: [{
+                    label: 'Frequency',
+                    data: [28, 24, 20, 18, 15, 14, 12, 10, 8, 6],
+                    backgroundColor: 'rgba(114, 95, 255, 0.7)',
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' },
+                        ticks: { color: '#a3aed0' }
+                    },
+                    y: {
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' },
+                        ticks: { color: '#a3aed0' }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Comment trends over time
+    const trendChartCtx = document.getElementById('comment-trend-chart');
+    if (trendChartCtx) {
+        new Chart(trendChartCtx, {
+            type: 'line',
+            data: {
+                labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                datasets: [
+                    {
+                        label: 'Positive',
+                        data: [12, 15, 18, 14, 20, 22],
+                        borderColor: 'rgba(76, 175, 80, 0.8)',
+                        backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    },
+                    {
+                        label: 'Neutral',
+                        data: [8, 7, 9, 8, 10, 8],
+                        borderColor: 'rgba(255, 193, 7, 0.8)',
+                        backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    },
+                    {
+                        label: 'Negative',
+                        data: [5, 3, 2, 4, 2, 1],
+                        borderColor: 'rgba(244, 67, 54, 0.8)',
+                        backgroundColor: 'rgba(244, 67, 54, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { color: '#a3aed0' }
+                    }
+                },
+                scales: {
+                    y: {
+                        stacked: false,
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' },
+                        ticks: { color: '#a3aed0' }
+                    },
+                    x: {
+                        grid: { color: 'rgba(163, 174, 208, 0.1)' },
+                        ticks: { color: '#a3aed0' }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Update the comment analysis table with sample data
+    updateCommentTable(generateSampleCommentData());
+}
+
+/**
+ * Generate sample comment data for demonstration
+ */
+function generateSampleCommentData() {
+    return [
+        {
+            id: 1,
+            student: 'Kim Min-ji',
+            class: 'Mathematics 101',
+            comment: 'I found the concepts challenging but the examples really helped me understand.',
+            sentiment: 'Positive',
+            date: '2025-05-01',
+            keywords: ['challenging', 'examples', 'understand']
+        },
+        {
+            id: 2,
+            student: 'Park Ji-hun',
+            class: 'Science 202',
+            comment: 'The experiment was interesting but I need more practice with the formulas.',
+            sentiment: 'Neutral',
+            date: '2025-05-02',
+            keywords: ['experiment', 'interesting', 'practice', 'formulas']
+        },
+        {
+            id: 3,
+            student: 'Lee Seo-yeon',
+            class: 'English 101',
+            comment: 'Great discussion today! I enjoyed the group work.',
+            sentiment: 'Positive',
+            date: '2025-05-03',
+            keywords: ['discussion', 'enjoyed', 'group work']
+        },
+        {
+            id: 4,
+            student: 'Han So-mi',
+            class: 'History 101',
+            comment: 'I\'m confused about the timeline we covered. Could we review it next class?',
+            sentiment: 'Negative',
+            date: '2025-05-04',
+            keywords: ['confused', 'timeline', 'review']
+        },
+        {
+            id: 5,
+            student: 'Kang Tae-woo',
+            class: 'Computer Science 202',
+            comment: 'The coding exercise was helpful but I\'m still struggling with the algorithms.',
+            sentiment: 'Neutral',
+            date: '2025-05-05',
+            keywords: ['coding', 'helpful', 'struggling', 'algorithms']
+        }
+    ];
+}
+
+/**
+ * Update the comment analysis table with actual data
+ */
+function updateCommentTable(comments) {
+    const tableBody = document.getElementById('comments-table-body');
+    if (!tableBody) return;
+    
+    // Clear existing rows
+    tableBody.innerHTML = '';
+    
+    // Add new rows
+    comments.forEach(comment => {
+        const row = document.createElement('tr');
+        
+        // Create sentiment badge with appropriate color
+        let sentimentClass = '';
+        switch(comment.sentiment) {
+            case 'Positive':
+                sentimentClass = 'bg-success';
+                break;
+            case 'Neutral':
+                sentimentClass = 'bg-warning';
+                break;
+            case 'Negative':
+                sentimentClass = 'bg-danger';
+                break;
+        }
+        
+        const sentimentBadge = `<span class="sentiment-badge ${sentimentClass}">${comment.sentiment}</span>`;
+        
+        // Create keywords badges
+        const keywordBadges = comment.keywords.map(keyword => 
+            `<span class="keyword-badge">${keyword}</span>`
+        ).join(' ');
+        
+        // Add cells to the row
+        row.innerHTML = `
+            <td>${comment.student}</td>
+            <td>${comment.class}</td>
+            <td>${comment.comment}</td>
+            <td>${sentimentBadge}</td>
+            <td>${comment.date}</td>
+            <td>${keywordBadges}</td>
+            <td>
+                <button class="action-btn view-btn" data-comment-id="${comment.id}">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M8 3C4.36364 3 1.25818 5.18182 0 8C1.25818 10.8182 4.36364 13 8 13C11.6364 13 14.7418 10.8182 16 8C14.7418 5.18182 11.6364 3 8 3ZM8 11.5C5.99273 11.5 4.36364 9.93091 4.36364 8C4.36364 6.06909 5.99273 4.5 8 4.5C10.0073 4.5 11.6364 6.06909 11.6364 8C11.6364 9.93091 10.0073 11.5 8 11.5ZM8 6C6.89455 6 6 6.89455 6 8C6 9.10545 6.89455 10 8 10C9.10545 10 10 9.10545 10 8C10 6.89455 9.10545 6 8 6Z" fill="currentColor"/>
+                    </svg>
+                </button>
+            </td>
+        `;
+        
+        tableBody.appendChild(row);
+    });
+    
+    // Add event listeners for view buttons
+    const viewButtons = document.querySelectorAll('.view-btn');
+    viewButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const commentId = this.getAttribute('data-comment-id');
+            viewCommentDetails(commentId);
+        });
+    });
+}
+
+/**
+ * View detailed information about a specific comment
+ */
+function viewCommentDetails(commentId) {
+    console.log(`Viewing comment details for comment ID: ${commentId}`);
+    
+    // In a real implementation, this would fetch the full comment details
+    // For now, we'll show a simple alert
+    alert(`Viewing detailed information for comment #${commentId}`);
+    
+    // A real implementation would show a modal with the full comment thread,
+    // history, responses, etc.
+}
+
+/**
+ * Fetch comment data based on the current filters
+ */
+function fetchCommentData(filters) {
+    console.log('Fetching comment data with filters:', filters);
+    
+    // In a real implementation, this would call the API
+    // For now, return sample data after a delay
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            resolve(generateSampleCommentData());
+        }, 500);
+    });
+}
+
+/**
+ * Process comment data to extract insights
+ */
+function processCommentData(comments) {
+    // Count sentiment distribution
+    const sentimentCounts = {
+        Positive: 0,
+        Neutral: 0,
+        Negative: 0
+    };
+    
+    // Extract all keywords
+    const keywordFrequency = {};
+    
+    // Process comments
+    comments.forEach(comment => {
+        // Count sentiment
+        sentimentCounts[comment.sentiment]++;
+        
+        // Count keywords
+        comment.keywords.forEach(keyword => {
+            if (keywordFrequency[keyword]) {
+                keywordFrequency[keyword]++;
+            } else {
+                keywordFrequency[keyword] = 1;
+            }
+        });
+    });
+    
+    // Sort keywords by frequency
+    const sortedKeywords = Object.entries(keywordFrequency)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10); // Get top 10
+    
+    return {
+        sentimentDistribution: {
+            labels: Object.keys(sentimentCounts),
+            data: Object.values(sentimentCounts)
+        },
+        topKeywords: {
+            labels: sortedKeywords.map(item => item[0]),
+            data: sortedKeywords.map(item => item[1])
+        },
+        comments: comments
+    };
+}
+
+/**
+ * Update comment analysis charts with new data
+ */
+function updateCommentCharts(data) {
+    // Update sentiment chart
+    const sentimentChart = Chart.getChart('comment-sentiment-chart');
+    if (sentimentChart && data.sentimentDistribution) {
+        sentimentChart.data.labels = data.sentimentDistribution.labels;
+        sentimentChart.data.datasets[0].data = data.sentimentDistribution.data;
+        sentimentChart.update();
+    }
+    
+    // Update keywords chart
+    const keywordsChart = Chart.getChart('comment-keywords-chart');
+    if (keywordsChart && data.topKeywords) {
+        keywordsChart.data.labels = data.topKeywords.labels;
+        keywordsChart.data.datasets[0].data = data.topKeywords.data;
+        keywordsChart.update();
+    }
+    
+    // Update comment table
+    updateCommentTable(data.comments);
+}
+
+/**
+ * Initialize all charts when analytics page loads
+ */
+function initAllCharts() {
+    // Make sure Chart.js is loaded
+    if (window.Chart) {
+        // Clear any existing charts to prevent duplicates
+        const canvases = document.querySelectorAll('canvas');
+        canvases.forEach(canvas => {
+            const chartInstance = Chart.getChart(canvas);
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
+        });
+        
+        // Initialize charts for each tab
+        initAttendanceCharts();
+        initPerformanceCharts();
+        initCommentCharts();  // Add this line to initialize comment charts
+        initComparisonCharts();
+        
+        console.log('All charts initialized successfully');
+    } else {
+        console.error('Chart.js not loaded, cannot initialize charts');
+    }
+}
+
+// ...existing code...
+
+/**
+ * Update dynamic filters based on selected analysis scope
+ */
+function updateDynamicFilters() {
+    const scope = document.getElementById('analysis-scope').value;
+    const container = document.getElementById('dynamic-filters-container');
+    let filterHTML = '';
+
+    switch (scope) {
+        case 'student':
+            filterHTML = `
+                <label class="filter-label">Select Semester(s)</label>
+                <div class="multi-select-container">
+                    <div class="multi-select-item">
+                        <input type="checkbox" id="sem-2025-1" checked>
+                        <label for="sem-2025-1">2025 Spring</label>
+                    </div>
+                    <div class="multi-select-item">
+                        <input type="checkbox" id="sem-2024-2">
+                        <label for="sem-2024-2">2024 Fall</label>
+                    </div>
+                    <div class="multi-select-item">
+                        <input type="checkbox" id="sem-2024-1">
+                        <label for="sem-2024-1">2024 Spring</label>
+                    </div>
+                </div>`;
+            break;
+
+        case 'school':
+            filterHTML = `
+                <label class="filter-label">Select School</label>
+                <select class="filter-select" id="school-filter">
+                    <option value="school-1">Seoul International</option>
+                    <option value="school-2">Busan Academy</option>
+                </select>
+                <label class="filter-label">Select Generation</label>
+                <select class="filter-select" id="generation-filter">
+                    <option value="2025">2025</option>
+                    <option value="2024">2024</option>
+                </select>`;
+            break;
+
+        case 'class':
+            filterHTML = `
+                <label class="filter-label">Select Class</label>
+                <select class="filter-select" id="class-filter">
+                    <option value="math-101">Mathematics 101</option>
+                    <option value="science-202">Science 202</option>
+                </select>`;
+            break;
+
+        default:
+            filterHTML = '<p class="filter-label">No additional filters needed</p>';
+    }
+
+    container.innerHTML = filterHTML;
+}
+
+// Event listener for scope change
+document.getElementById('analysis-scope').addEventListener('change', updateDynamicFilters);
