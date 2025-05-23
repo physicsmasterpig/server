@@ -1,0 +1,27 @@
+<!-- Table Component Template -->
+<div class="data-table-container">
+  <div class="chart-header">
+    <div class="chart-title">${title}</div>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        ${headers.map(header => `<th>${header}</th>`).join('')}
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map(row => `
+        <tr>
+          ${row.map((cell, i) => {
+            if (i === row.length - 1 && cell.includes('%')) {
+              // If it's the last cell and contains a percentage, handle it as change indicator
+              const isNegative = cell.includes('-') ? 'negative' : '';
+              return `<td class="stat-change ${isNegative}">${cell}</td>`;
+            }
+            return `<td>${cell}</td>`;
+          }).join('')}
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+</div>

@@ -1,0 +1,55 @@
+/* Base theme styles */
+:root {
+    /* Colors */
+    --color-background: #0C0E12;
+    --color-card-bg: #13161B;
+    --color-border: #22262F;
+    --color-text-primary: #FFFFFF;
+    --color-text-secondary: #94979C;
+    --color-primary: #7F56D9;
+    --color-primary-hover: #6941C6;
+    --color-success: #4CAF50;
+    --color-danger: #F44336;
+    
+    /* Spacing */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+    
+    /* Border Radius */
+    --border-radius-sm: 6px;
+    --border-radius-md: 10px;
+    
+    /* Font Sizes */
+    --font-size-xs: 12px;
+    --font-size-sm: 14px;
+    --font-size-md: 16px;
+    --font-size-lg: 18px;
+    --font-size-xl: 24px;
+    --font-size-xxl: 28px;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--color-background);
+    font-family: "Inter", sans-serif;
+    color: var(--color-text-primary);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+    width: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: #1E2128;
+    border-radius: 10px;
+}

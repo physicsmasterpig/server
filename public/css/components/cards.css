@@ -1,0 +1,40 @@
+/* Component: Cards */
+.stat-card {
+    background-color: #13161B;
+    border: 1px solid #22262F;
+    border-radius: 10px;
+    padding: 20px;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+}
+
+.stat-label {
+    font-size: 14px;
+    color: #94979C;
+    margin-bottom: 8px;
+}
+
+.stat-value {
+    font-size: 28px;
+    font-weight: 600;
+    color: #FFFFFF;
+    margin-bottom: 5px;
+}
+
+.stat-change {
+    font-size: 12px;
+    color: #4CAF50;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.stat-change.negative {
+    color: #F44336;
+}

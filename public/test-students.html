@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BrainDB - Students Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        .student-list {
+            list-style: none;
+            padding: 0;
+        }
+        .student-item {
+            background-color: #fff;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .student-name {
+            font-weight: bold;
+            font-size: 18px;
+        }
+        .student-school {
+            color: #666;
+        }
+        .status {
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-active {
+            background-color: #e6f7e6;
+            color: #28a745;
+        }
+        .status-inactive {
+            background-color: #f7e6e6;
+            color: #dc3545;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            font-style: italic;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Students List</h1>
+        <div id="loading" class="loading">Loading students data...</div>
+        <ul id="studentsList" class="student-list" style="display: none;"></ul>
+    </div>
+
+    <script>
+        // Simple function to fetch students data
+        async function fetchStudents() {
+            const response = await fetch('/api/students/test');
+            const data = await response.json();
+            return data.data;
+        }
+
+        // Function to render students
+        function renderStudents(students) {
+            const studentsList = document.getElementById('studentsList');
+            studentsList.innerHTML = '';  // Clear list
+            
+            students.forEach(student => {
+                const li = document.createElement('li');
+                li.className = 'student-item';
+                
+                const info = document.createElement('div');
+                
+                const name = document.createElement('div');
+                name.className = 'student-name';
+                name.textContent = student.name;
+                
+                const school = document.createElement('div');
+                school.className = 'student-school';
+                school.textContent = student.school;
+                
+                info.appendChild(name);
+                info.appendChild(school);
+                
+                const status = document.createElement('span');
+                status.className = `status status-${student.status}`;
+                status.textContent = student.status.toUpperCase();
+                
+                li.appendChild(info);
+                li.appendChild(status);
+                
+                studentsList.appendChild(li);
+            });
+            
+            // Hide loading, show list
+            document.getElementById('loading').style.display = 'none';
+            studentsList.style.display = 'block';
+        }
+
+        // Load and display students when page loads
+        window.addEventListener('load', async () => {
+            try {
+                const students = await fetchStudents();
+                renderStudents(students);
+            } catch (error) {
+                console.error('Failed to load students:', error);
+                document.getElementById('loading').textContent = 'Error loading students data.';
+            }
+        });
+    </script>
+</body>
+</html>

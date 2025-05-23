@@ -1,0 +1,19 @@
+/* Main CSS file that imports all modular CSS files */
+
+/* Base Styles */
+@import url('./base/theme.css');
+
+/* Components */
+@import url('./components/cards.css');
+@import url('./components/charts.css');
+@import url('./components/tables.css');
+@import url('./components/tabs.css');
+@import url('./components/forms.css');
+
+/* Layouts */
+@import url('./layouts/analytics-layout.css');
+@import url('./layouts/students-layout.css');
+@import url('./layouts/classes-layout.css');
+@import url('./layouts/exams-layout.css');
+@import url('./layouts/attendances-layout.css');
+@import url('./layouts/home-layout.css');

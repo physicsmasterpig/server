@@ -1,0 +1,111 @@
+/* Component: Forms and Controls */
+.filter-section {
+    padding: 20px 0;
+}
+
+.filter-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #FFFFFF;
+    margin-bottom: 16px;
+}
+
+.filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.filter-column {
+    flex: 1;
+    min-width: 200px;
+}
+
+.filter-label {
+    display: block;
+    font-size: 12px;
+    color: #94979C;
+    margin-bottom: 6px;
+}
+
+.filter-select, .filter-input {
+    width: 100%;
+    background-color: #0C0E12;
+    border: 1px solid #22262F;
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: #FFFFFF;
+    font-size: 14px;
+}
+
+.filter-select option {
+    background-color: #13161B;
+    color: #FFFFFF;
+}
+
+/* Buttons */
+.btn-primary {
+    background-color: #7F56D9;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+    background-color: #6941C6;
+    transform: translateY(-2px);
+}
+
+/* Toggle Switch */
+.toggle-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.toggle-input {
+    display: none;
+}
+
+.toggle-label {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 24px;
+    background-color: #22262F;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.toggle-label:after {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background-color: #FFFFFF;
+    top: 3px;
+    left: 3px;
+    transition: all 0.3s ease;
+}
+
+.toggle-input:checked + .toggle-label {
+    background-color: #7F56D9;
+}
+
+.toggle-input:checked + .toggle-label:after {
+    left: 27px;
+}
+
+.toggle-text {
+    color: #94979C;
+    font-size: 14px;
+}

@@ -5,19 +5,20 @@ BrainDB is a comprehensive educational database system designed to help educatio
 ## Features
 
 - Student management (add, view, update, delete)
-- Class management
-- Lecture tracking
-- Attendance monitoring
-- Exam management
-- Homework assignments
-- Analytics dashboard
+- Class management with enrollment tracking
+- Lecture scheduling and attendance monitoring
+- Comprehensive homework and assignment tracking
+- Exam creation and grading system
+- Performance analytics and reporting
+- Modular and maintainable architecture
 
 ## Technology Stack
 
-- **Frontend**: HTML, CSS, JavaScript (Vanilla)
-- **Backend**: Node.js, Express
-- **Database**: Google Sheets API
+- **Frontend**: HTML, CSS, JavaScript with modular component system
+- **Backend**: Node.js, Express with MVC architecture
+- **Database**: Google Sheets API with repository pattern
 - **Authentication**: Google OAuth 2.0
+- **Logging**: Winston for structured logging
 
 ## Prerequisites
 
@@ -50,23 +51,21 @@ Before you begin, ensure you have the following installed:
 4. **Configure the Google Sheet**
    - Create a new Google Sheet
    - Share the sheet with the email address from your service account (with editor permissions)
-   - Copy the spreadsheet ID (from the URL) and update the `spreadsheetId` variable in `server.js`
+   - Copy the spreadsheet ID (from the URL) and update the `spreadsheetId` in `src/config/database.config.js`
    - Create the following sheets in your spreadsheet:
-     - student
+     - students
      - class
      - lecture
      - enrollment
      - attendance
      - homework
      - exam
-     - problem
+     - problem_id
      - exam_problem
      - score
 
-5. **Run initial setup**
-   ```bash
-   npm run setup
-   ```
+5. **Configure application settings**
+   - Review and update settings in `src/config/app.config.js`
 
 6. **Start the application**
    ```bash
@@ -80,21 +79,63 @@ Before you begin, ensure you have the following installed:
 
 ```
 brain-db/
-├── server.js                # Main server entry point
+├── app.js                   # Main server entry point
+├── server.js                # Server bootstrap script
 ├── package.json             # Project dependencies and scripts
 ├── credential.json          # Google API credentials (not included in repo)
-├── public/                  # Static files
+├── docs/                    # Project documentation
+│   ├── repository-system.md # Documentation for repository system
+│   └── modularization-guide.md # Guide for frontend modularization
+├── public/                  # Frontend static files
 │   ├── index.html           # Main HTML file
-│   ├── style.css            # Global styles
-│   ├── index.js             # Global JavaScript
-│   └── menu-content/        # Page-specific content
-│       ├── home.html        # Home page content
-│       ├── home.js          # Home page JavaScript
-│       ├── students.html    # Students page content
-│       ├── students.js      # Students page JavaScript
-│       └── ...              # Other page files
-└── uploads/                 # Directory for file uploads
+│   ├── index.js             # Frontend entry point
+│   ├── css/                 # CSS modules and styles
+│   │   ├── main.css         # Main CSS file
+│   │   ├── base/            # Base styles and themes
+│   │   ├── components/      # Component-specific styles
+│   │   └── layouts/         # Layout styles
+│   ├── js/                  # Frontend JavaScript
+│   │   ├── core/            # Core modules and base classes
+│   │   ├── modules/         # Feature modules 
+│   │   └── services/        # Frontend services
+│   ├── templates/           # HTML templates for components
+│   └── menu-content/        # Legacy page content
+├── src/                     # Backend source code
+│   ├── api/                 # API routes
+│   ├── config/              # Application configuration
+│   ├── controllers/         # Request handlers
+│   ├── middleware/          # Express middleware
+│   ├── models/              # Data repositories
+│   └── services/            # Backend services
 ```
+
+## API Endpoints
+
+BrainDB provides a comprehensive RESTful API:
+
+- **/api/students** - Student management
+- **/api/classes** - Class management
+- **/api/lectures** - Lecture management
+- **/api/attendance** - Attendance tracking
+- **/api/homework** - Homework management
+- **/api/exams** - Exam management
+- **/api/scores** - Score management
+- **/api/enrollment** - Enrollment management
+- **/api/analytics** - Analytics and reports
+
+See API documentation in `/api` endpoint when the server is running.
+
+## Architecture
+
+BrainDB follows a clean, layered architecture:
+
+1. **Repository Layer** - Handles data access with the repository pattern
+2. **Service Layer** - Implements business logic and shared services
+3. **Controller Layer** - Handles HTTP requests and responses
+4. **Route Layer** - Defines API endpoints and routes
+5. **Frontend Layer** - Implements UI with modular components
+
+For more details, see the documentation in the `docs/` directory.
 
 ## Development
 
@@ -102,6 +143,12 @@ For development with automatic server restarts:
 
 ```bash
 npm run dev
+```
+
+## Testing
+
+```bash
+npm test
 ```
 
 ## Contributing

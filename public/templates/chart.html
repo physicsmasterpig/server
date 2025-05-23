@@ -1,0 +1,14 @@
+<!-- Chart Component Template -->
+<div class="chart-container">
+  <div class="chart-header">
+    <div>
+      <div class="chart-title">${title}</div>
+      ${subtitle ? `<div class="chart-subtitle">${subtitle}</div>` : ''}
+    </div>
+    ${actions ? `<div class="chart-actions">${actions}</div>` : ''}
+  </div>
+  <div class="chart-body">
+    <canvas id="${chartId}"></canvas>
+  </div>
+  ${footer ? `<div class="chart-footer">${footer}</div>` : ''}
+</div>

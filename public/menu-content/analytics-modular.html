@@ -1,0 +1,147 @@
+<!-- Analytics HTML Template -->
+<div class="analytics-container">
+    <h1>Analytics Dashboard</h1>
+    
+    <!-- Loading indicator -->
+    <div id="analytics-loading-indicator" class="analytics-loading">
+        <div class="analytics-loading-content">
+            <div class="analytics-spinner"></div>
+            <div class="analytics-loading-text">Loading analytics data...</div>
+        </div>
+    </div>
+    
+    <!-- Stats Overview Section -->
+    <div class="stats-overview">
+        <!-- Stat cards will be inserted here by the component system -->
+    </div>
+    
+    <!-- Analysis Controls Section -->
+    <div class="analysis-controls">
+        <div class="filter-section">
+            <div class="filter-title">Analysis Scope & Filters</div>
+            <div class="filter-row">
+                <div class="filter-column">
+                    <label class="filter-label" for="analysis-scope">Analysis Scope</label>
+                    <select class="filter-select" id="analysis-scope">
+                        <option value="all">All Data</option>
+                        <option value="by-student">By Student</option>
+                        <option value="by-class">By Class</option>
+                        <option value="by-school">By School</option>
+                    </select>
+                </div>
+                
+                <div class="filter-column">
+                    <label class="filter-label" for="time-period">Time Period</label>
+                    <select class="filter-select" id="time-period">
+                        <option value="current">Current Semester (2025-1)</option>
+                        <option value="previous">Previous Semester (2024-2)</option>
+                        <option value="year">Last Year</option>
+                        <option value="all-time">All Time</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Dynamic scope filters will be inserted here -->
+            <div class="filter-row" id="scope-filter-container">
+                <p class="filter-label">No additional filters needed</p>
+            </div>
+            
+            <div class="filter-actions">
+                <button id="apply-filters" class="btn-primary">Apply Filters</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Tab Navigation -->
+    <div class="tab-navigation">
+        <div class="tab-item active" data-tab="attendance">Attendance Analysis</div>
+        <div class="tab-item" data-tab="performance">Performance Analysis</div>
+        <div class="tab-item" data-tab="comments">Comment Analysis</div>
+        <div class="tab-item" data-tab="comparison">Comparison</div>
+    </div>
+    
+    <!-- Attendance Analysis Tab -->
+    <div id="attendance-tab" class="tab-content active">
+        <div class="chart-row">
+            <div class="chart-container">
+                <div class="chart-header">
+                    <div>
+                        <div class="chart-title">Attendance Patterns</div>
+                        <div class="chart-subtitle">Weekly attendance trends</div>
+                    </div>
+                </div>
+                <div class="chart-body">
+                    <canvas id="attendance-pattern-chart"></canvas>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <div class="chart-header">
+                    <div>
+                        <div class="chart-title">Attendance by Day</div>
+                        <div class="chart-subtitle">Attendance rate by day of week</div>
+                    </div>
+                </div>
+                <div class="chart-body">
+                    <canvas id="attendance-by-day-chart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div class="chart-row">
+            <div class="chart-container">
+                <div class="chart-header">
+                    <div class="chart-title">Attendance Distribution</div>
+                </div>
+                <div class="chart-body">
+                    <canvas id="attendance-distribution-chart"></canvas>
+                </div>
+            </div>
+            
+            <div class="data-table-container">
+                <div class="chart-header">
+                    <div class="chart-title">Attendance Summary</div>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>Count</th>
+                            <th>Percentage</th>
+                            <th>Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Present</td>
+                            <td>358</td>
+                            <td>78%</td>
+                            <td class="stat-change">+2.4%</td>
+                        </tr>
+                        <tr>
+                            <td>Absent</td>
+                            <td>37</td>
+                            <td>8%</td>
+                            <td class="stat-change negative">+0.5%</td>
+                        </tr>
+                        <tr>
+                            <td>Late</td>
+                            <td>46</td>
+                            <td>10%</td>
+                            <td class="stat-change negative">+0.2%</td>
+                        </tr>
+                        <tr>
+                            <td>Excused</td>
+                            <td>18</td>
+                            <td>4%</td>
+                            <td class="stat-change">-3.1%</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Other tabs content remains the same -->
+    <!-- ... -->
+</div>

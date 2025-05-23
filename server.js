@@ -31,6 +31,68 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Simple API endpoint for testing
+app.get('/api/students/test', (req, res) => {
+  logger.info('Test student endpoint accessed');
+  res.json({
+    success: true,
+    data: [
+      { id: '1', name: 'John Doe', school: 'High School A', status: 'active' },
+      { id: '2', name: 'Jane Smith', school: 'High School B', status: 'active' },
+      { id: '3', name: 'Bob Johnson', school: 'High School A', status: 'inactive' }
+    ]
+  });
+});
+
+// Serve template files
+app.get('/templates/:template', (req, res) => {
+  const templateName = req.params.template;
+  const templatePath = path.join(__dirname, 'public', 'templates', templateName);
+  
+  // Security check: ensure the template exists and is a .html file
+  if (!templateName.endsWith('.html')) {
+    return res.status(400).send('Invalid template format');
+  }
+  
+  fs.access(templatePath, fs.constants.F_OK, (err) => {
+    if (err) {
+      logger.error(`Template not found: ${templateName}`);
+      return res.status(404).send('Template not found');
+    }
+    
+    res.sendFile(templatePath);
+  });
+});
+
+// Serve render content for page navigation
+app.get('/render/:page', (req, res) => {
+  const pageName = req.params.page;
+  // Only allow alphanumeric page names for security
+  if (!/^[a-zA-Z0-9-]+$/.test(pageName)) {
+    return res.status(400).send('Invalid page name');
+  }
+  
+  const pagePath = path.join(__dirname, 'public', 'menu-content', `${pageName}.html`);
+  
+  fs.access(pagePath, fs.constants.F_OK, (err) => {
+    if (err) {
+      logger.error(`Page content not found: ${pageName}`);
+      return res.status(404).send(`<p>Page content for "${pageName}" not found.</p>`);
+    }
+    
+    // Read the file content instead of sending the file directly
+    // This allows for future templating/processing if needed
+    fs.readFile(pagePath, 'utf8', (readErr, content) => {
+      if (readErr) {
+        logger.error(`Error reading page content for ${pageName}: ${readErr}`);
+        return res.status(500).send('Error loading page content');
+      }
+      
+      res.send(content);
+    });
+  });
+});
+
 // Configure file upload storage
 const storage = multer.diskStorage({
   destination: function(req, file, cb) {
@@ -414,12 +476,30 @@ app.post('/upload-file', upload.single('file'), async (req, res) => {
 
 // Routes
 app.get('/render/:page', (req, res) => {
-  const { page } = req.params;
-  const filePath = path.join(__dirname, 'public', 'menu-content', `${page}.html`);
-  res.sendFile(filePath, (err) => {
+  const pageName = req.params.page;
+  // Only allow alphanumeric page names for security
+  if (!/^[a-zA-Z0-9-]+$/.test(pageName)) {
+    return res.status(400).send('Invalid page name');
+  }
+  
+  const pagePath = path.join(__dirname, 'public', 'menu-content', `${pageName}.html`);
+  
+  fs.access(pagePath, fs.constants.F_OK, (err) => {
     if (err) {
-      res.status(404).send('<p>Page not found.</p>');
+      logger.error(`Page content not found: ${pageName}`);
+      return res.status(404).send(`<p>Page content for "${pageName}" not found.</p>`);
     }
+    
+    // Read the file content instead of sending the file directly
+    // This allows for future templating/processing if needed
+    fs.readFile(pagePath, 'utf8', (readErr, content) => {
+      if (readErr) {
+        logger.error(`Error reading page content for ${pageName}: ${readErr}`);
+        return res.status(500).send('Error loading page content');
+      }
+      
+      res.send(content);
+    });
   });
 });
 
